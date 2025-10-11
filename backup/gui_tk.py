@@ -8,6 +8,10 @@ from .constants import (
     PIECE_PAWN, PIECE_KNIGHT, PIECE_BISHOP, PIECE_ROOK, PIECE_QUEEN, PIECE_KING
 )
 
+from .quiz import abrir_quiz
+from .quiz import run_quiz_for_capture
+
+
 # ---------- Config visual ----------
 SQUARE = 96  # tamanho de cada casa (px)
 PADDING = 0  # sem bordas extras
@@ -122,21 +126,47 @@ class MiniChessApp:
             self.legal_dests_from_selected = []
             self.draw()
 
-    def _apply_move(self, src: int, dst: int):
-        """Aplica movimento procurando em legal_moves (lida com promo automaticamente)."""
-        # Tente casar src/dst ignorando promo e usar a string UCI apropriada
-        f_src, r_src = fr(src)
-        f_dst, r_dst = fr(dst)
-        uci_base = f"{sq_to_algebraic(src)}{sq_to_algebraic(dst)}"
 
-        # Verifica se o lance legal exige promoção
+    def _apply_move(self, src: int, dst: int):
+        """Aplica movimento com quiz em capturas."""
+        alvo = self.board.piece_at(dst)
+        atacante = self.board.piece_at(src)
+
+        print(f"Tentando mover de {src} para {dst}")
+        if atacante:
+            print(f"Atacante: {atacante}")
+        if alvo:
+            print(f"Alvo: {alvo}")
+
+        # Se for captura, decide via quiz QUEM errou
+        if alvo is not None and atacante is not None and alvo[0] != atacante[0]:
+            print("⚔️ Movimento de captura detectado, chamando quiz...")
+            loser = run_quiz_for_capture(self.root, atacante[0], alvo[0])
+            print(f"Resultado do quiz → quem perdeu: {loser}")
+
+            if loser == "attacker":
+                print("❌ Atacante errou → removendo peça atacante e cancelando a jogada")
+                self.board.board[src] = None
+                # passa a vez
+                self.board.turn = self.board.enemy(self.board.turn)
+                self.selected = None
+                self.legal_dests_from_selected = []
+                self.draw()
+                return
+            else:
+                print("✅ Defensor errou (ou ninguém errou) → captura confirmada")
+
+        # --- Movimento normal OU defensor errou (captura segue) ---
+        from .board import sq_to_algebraic
+        uci_base = f"{sq_to_algebraic(src)}{sq_to_algebraic(dst)}"
         for m in self.board.legal_moves():
             if m.src == src and m.dst == dst:
                 if m.promo:
-                    self.board.push_sanlike(uci_base + "q")  # promo padrão: dama
+                    self.board.push_sanlike(uci_base + "q")
                 else:
                     self.board.push_sanlike(uci_base)
                 break
+
 
     # ---------- Desenho ----------
     def draw(self):

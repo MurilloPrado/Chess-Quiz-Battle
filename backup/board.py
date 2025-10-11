@@ -48,14 +48,14 @@ class Board5x6:
 
     def _place_start_position(self) -> None:
         # White: rank 1 (r=0) R N B Q K ; rank 2 (r=1) peões
-        back_white = [PIECE_ROOK, PIECE_KNIGHT, PIECE_BISHOP, PIECE_QUEEN, PIECE_KING]
+        back_white = [PIECE_ROOK,  PIECE_QUEEN, PIECE_KING, PIECE_KNIGHT, PIECE_BISHOP]
         for f, pt in enumerate(back_white):
             self._place(f, 0, WHITE, pt)
         for f in range(BOARD_W):
             self._place(f, 1, WHITE, PIECE_PAWN)
 
         # Black: rank 6 (r=5) r n b q k ; rank 5 (r=4) peões
-        back_black = [PIECE_ROOK, PIECE_KNIGHT, PIECE_BISHOP, PIECE_QUEEN, PIECE_KING]
+        back_black = [PIECE_ROOK,  PIECE_QUEEN, PIECE_KING, PIECE_KNIGHT, PIECE_BISHOP]
         for f, pt in enumerate(back_black):
             self._place(f, 5, BLACK, pt)
         for f in range(BOARD_W):
