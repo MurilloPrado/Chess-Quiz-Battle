@@ -1,10 +1,11 @@
+# board.py
 from typing import List, Optional, Tuple
-from .constants import (
+from constants import (  # <<< CORRIGIDO
     BOARD_W, BOARD_H, FILES, WHITE, BLACK,
     PIECE_PAWN, PIECE_KNIGHT, PIECE_BISHOP, PIECE_ROOK, PIECE_QUEEN, PIECE_KING,
     PIECE_SYMBOL
 )
-from .move import Move
+from move import Move # <<< CORRIGIDO
 
 
 # ---------- helpers de coordenadas ----------
