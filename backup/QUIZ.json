@@ -1,0 +1,82 @@
+[
+  {
+    "pergunta": "De acordo com Alan Turing, é possível criar um programa que lê outro programa e diz se ele vai entrar em loop?",
+    "alternativas": [
+      "Não, isso é impossível (Problema da Parada).",
+      "Somente se o programa for muito simples.",
+      "Apenas para programas escritos em linguagens específicas"
+    ],
+    "correta": 0
+  },
+  {
+    "pergunta": "O estudo da Computabilidade tem seu foco em:",
+    "alternativas": [
+      "Analisar quais problemas podem ou não ser resolvidos por algoritmos.",
+      "Armazenar dados em bancos de forma eficiente.",
+      "Definir apenas problemas relacionados a hardware.",
+      "Organizar memória de forma otimizada."
+    ],
+    "correta": 0
+  },
+  {
+    "pergunta": "Alexandria-Euclides começou na área da computabilidade com a criação do máximo divisor comum de dois números, dando início a:",
+    "alternativas": [
+      "Processos mecânicos e finitos para resolver problemas.",
+      "Cálculos aproximados sem regras definidas.",
+      "Algoritmos que funcionam apenas com números primos.",
+      "Programas de computador modernos."
+    ],
+    "correta": 0
+  },
+  {
+    "pergunta": "No século XX, David Hilbert acreditava que todo problema tinha uma solução, mas Gödel, Church e Kleene mostraram que nem todos podiam ser resolvidos. Turing provou isso em um trabalho chamado:",
+    "alternativas": [
+      "Teorema da Computabilidade Universal.",
+      "Algoritmo do Máximo Divisor Comum.",
+      "Teorema da Incompletude de Hilbert.",
+      "Problema da Parada (Halting Problem)."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "Qual é o principal objetivo da Máquina de Turing?",
+    "alternativas": [
+      "Criar programas para interface gráfica.",
+      "Executar cálculos rapidamente em computadores modernos.",
+      "Modelar matematicamente o funcionamento de qualquer algoritmo ou processo computacional.",
+      "Resolver apenas problemas de álgebra e números primos."
+    ],
+    "correta": 2
+  },
+  {
+    "pergunta": "Como podemos descrever um programa monolítico?",
+    "alternativas": [
+      "Um programa dividido em módulos independentes e reutilizáveis.",
+      "Um software que roda apenas em sistemas operacionais específicos.",
+      "Um programa em que todas as funcionalidades estão em um único bloco de código.",
+      "Um programa que não precisa de manutenção nem atualização."
+    ],
+    "correta": 2
+  },
+  {
+    "pergunta": "O que caracteriza um programa interativo?",
+    "alternativas": [
+      "Recebe entradas do usuário e responde em tempo real.",
+      "Executa cálculos automaticamente sem interação do usuário.",
+      "Funciona apenas em segundo plano, sem interface.",
+      "Só pode ser usado em computadores antigos."
+    ],
+    "correta": 0
+  },
+
+{
+    "pergunta": "O que caracteriza um programa recursivo?",
+    "alternativas": [
+      "Um programa que só executa operações sequenciais simples.",
+      "Um software que não pode ser dividido em módulos.",
+      "Um programa que não aceita entradas do usuário.",
+      "Uma função que se chama a si mesma para resolver subproblemas, até atingir um caso base."
+    ],
+    "correta": 3
+  }
+]
