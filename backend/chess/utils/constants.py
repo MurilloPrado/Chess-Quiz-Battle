@@ -1,3 +1,5 @@
+from typing import Dict, Optional, Tuple
+
 # tabuleiro
 BOARD_W = 5
 BOARD_H = 6
