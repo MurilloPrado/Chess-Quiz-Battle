@@ -12,7 +12,7 @@ from ...chess.utils.coordinates import fr, sq, sq_to_algebraic
 #from .quiz import run_quiz_for_capture
 
 
-# ---------- Config visual ----------
+# Configuração visual
 SQUARE = 96  # tamanho de cada casa (px)
 PADDING = 0  # sem bordas extras
 LIGHT_COLOR = "#F0D9B5"
@@ -21,6 +21,7 @@ SEL_COLOR   = "#F6F669"
 MOVE_COLOR  = "#A9D18E"
 CHECK_COLOR = "#E57373"
 
+# gerador de peças
 UNICODE_WHITE = {
     PIECE_PAWN: "♙", PIECE_KNIGHT: "♘", PIECE_BISHOP: "♗",
     PIECE_ROOK: "♖", PIECE_QUEEN: "♕", PIECE_KING: "♔",
@@ -34,10 +35,11 @@ def piece_to_unicode(color: int, p: int) -> str:
     return (UNICODE_WHITE if color == WHITE else UNICODE_BLACK).get(p, "·")
 
 
+# gera janela
 class MiniChessApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("MiniChess 5x6")
+        self.root.title("Chess Quiz Battle")
         self.board = Board5x6()
 
         self.canvas = tk.Canvas(
