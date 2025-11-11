@@ -18,12 +18,21 @@ FRAME_MARGIN  = 18      # margem da moldura externa em relação à janela
 CONTAINER_MAX_W = 1100  # largura máxima do "container" central
 CONTAINER_PAD   = 40    # padding interno do container
 LEFT_COL_RATIO  = 0.55  # % do container para a coluna esquerda (título + menu)
-# --- no topo, com os demais "consts" ---
+# titulo 
 TITLE_PAD_X        = 8     # padding horizontal dentro do bloco do título
 TITLE_PAD_TOP      = 24    # padding extra acima do título (mais respiro no topo)
 TITLE_PAD_BOTTOM   = 12    # padding abaixo do título
 TITLE_TO_MENU_GAP  = 24    # distância entre o bloco do título e o menu
 BRACKET_MARGIN_X   = 12    # distância horizontal dos colchetes em relação ao título
+# grid
+GRID_SPEED       = 30.0   # pixels/seg do deslocamento das linhas horizontais
+GRID_SPACING     = 100      # distância base entre linhas
+GRID_LINES       = 16      # quantas "faixas" horizontais desenhar
+GRID_COLOR       = NEON    # cor do grid
+HORIZON_OFFSET   = 10      # empurra o horizonte (positivo = desce)
+VERT_LINES_N     = 70      # quantidade de linhas verticais
+VERT_SPREAD_BOTTOM = 400   # espalhamento das verticais na base
+VERT_SPREAD_TOP    = 30    # espalhamento das verticais no horizonte
 
 
 # layout/menu
@@ -104,7 +113,42 @@ class MenuScene(Scene):
         # pequeno flicker no alpha global
         self.crt_overlay.set_alpha(165 + int(10 * (1 + math.sin(t * 7)) / 2))
         screen.blit(self.crt_overlay, (0, 0))
-        
+
+
+    def _draw_vaporwave_grid(self, screen, t: float):
+        w, h = screen.get_size()
+        bot = BOTTOM_HALF(w, h)
+
+        # Horizonte (no topo do bottom) com offset fino
+        horizon_y = bot.top + HORIZON_OFFSET
+        center_x  = w // 2
+
+        # Offset animado para linhas horizontais (move "pra baixo" no tempo)
+        offset = int((t * GRID_SPEED) % GRID_SPACING)
+
+        # --- Linhas horizontais com "perspectiva simples" ---
+        # Ideia: cada faixa mais distante é mais "apertada" (scale 0..1), as mais próximas mais largas.
+        for i in range(GRID_LINES):
+            # i=0 perto do horizonte; i grande = mais perto do observador
+            scale = (i + 1) / float(GRID_LINES)  # 0..1
+            y = horizon_y + offset + i * GRID_SPACING
+            y = int(y)
+            # largura cresce com a "proximidade" (scale)
+            left_x  = int(center_x - (w // 2) * (1 + scale))
+            right_x = int(center_x + (w // 2) * (1 + scale))
+
+            pygame.draw.line(screen, GRID_COLOR, (left_x, y), (right_x, y), 2)
+
+        # Linha do horizonte
+        pygame.draw.line(screen, GRID_COLOR, (0, horizon_y), (w, horizon_y), 2)
+
+        # --- Linhas verticais que convergem no horizonte ---
+        pen_w = 1  # (em pygame, a espessura é o último argumento de draw.line)
+        for i in range(-VERT_LINES_N // 2, VERT_LINES_N // 2 + 1):
+            x_bottom = int(center_x + i * VERT_SPREAD_BOTTOM)
+            x_top    = int(center_x + i * VERT_SPREAD_TOP)
+            pygame.draw.line(screen, GRID_COLOR, (x_bottom, bot.bottom), (x_top, horizon_y), pen_w)
+
 
     def draw_side_brackets(self, screen, rect: pygame.Rect, color=NEON, thick=BRACKET_THICK, tick=34, gap_x=BRACKET_MARGIN_X, gap_y=0):
         # expande a área para afastar as barras do texto
@@ -122,50 +166,10 @@ class MenuScene(Scene):
         pygame.draw.line(screen, color, (L, B), (L + tick, B), thick)
         pygame.draw.line(screen, color, (R, B), (R - tick, B), thick)
 
-
-    def _grid_for_size(self, w: int, h: int) -> pygame.Surface:
-        key = (w, h)
-        if key in self._grid_cache:
-            return self._grid_cache[key]
-
-        bot = BOTTOM_HALF(w, h)
-        iw, ih = self.grid_img.get_size()
-        # scale-to-cover (cover): preenche todo o retângulo, podendo cortar sobras
-        scale = max(bot.w / iw, bot.h / ih)
-        new_size = (max(1, int(iw * scale)), max(1, int(ih * scale)))
-        scaled = pygame.transform.smoothscale(self.grid_img, new_size)
-
-        # cria uma surface exatamente do tamanho do "bot" e recorta o excesso
-        surf = pygame.Surface((bot.w, bot.h), pygame.SRCALPHA)
-        ox = (scaled.get_width()  - bot.w) // 2
-        oy = (scaled.get_height() - bot.h) // 2
-        surf.blit(scaled, (-ox, -oy))
-
-        # opcional: colorir para neon se a arte for branca
-        if self.tint_grid:
-            tint = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
-            tint.fill((*NEON, 255))
-            surf.blit(tint, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-
-        self._grid_cache[key] = surf
-        return surf
-
-    # CHANGED: se a janela mudar de tamanho, invalida cache (chame quando detectar resize, se quiser)
-    def _invalidate_grid_cache(self):
-        self._grid_cache.clear()
-
-
     def enter(self, ctx):
         self.ctx = ctx
         self.screen = ctx["screen"]
         self.time = 0.0
-
-        # carrega o PNG do grid
-        project_root = Path(__file__).resolve().parents[4]   # .../ (sobe de scenes → gui → app → backend → raiz)
-        grid_path    = project_root / "assets" / "ui" / "grid_bottom.png"
-        self.grid_img = pygame.image.load(str(grid_path)).convert_alpha()
-        self._grid_cache = {}    # (w,h) -> Surface pronto
-        self.tint_grid = False    # True se o PNG for branco (para tingir de neon)
 
         # fontes e itens
         self.font_big = font_consolas(36)
@@ -208,9 +212,7 @@ class MenuScene(Scene):
         screen.fill((0, 0, 0))
 
         # GRID: ainda usamos BOTTOM_HALF/TOP_RATIO só para posicionar o fundo
-        bot = BOTTOM_HALF(w, h)
-        grid_surf = self._grid_for_size(w, h)
-        screen.blit(grid_surf, (bot.x, bot.y + GRID_Y_OFFSET))
+        self._draw_vaporwave_grid(screen, self.time)
 
         # Agora o conteúdo usa a TELA TODA via CONTAINER/LEFT_COL/RIGHT_PANEL
         left  = LEFT_COL(w, h)
