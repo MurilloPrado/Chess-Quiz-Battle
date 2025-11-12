@@ -1,0 +1,57 @@
+:root{
+  --neon:#00ff6a;
+  --ink:#0a0d12;
+  --panel:#020508;
+  --panel-2:#161a22;
+  --text:#eaf4ff;
+  --tile:96px;
+  --glow:0 0 16px var(--neon), 0 0 32px var(--neon);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--ink);color:var(--text);font:15px/1.45 Consolas, monospace;overflow:hidden}
+
+/* GRID BG */
+#bgGrid{position:fixed;inset:0;width:100%;height:100%;display:block;background:radial-gradient(ellipse,#000 0%,#02060b 60%,#000 100%);z-index:0}
+
+/* TELAS (Home/Name) */
+.gate{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.55);z-index:3}
+.gate-card{background:var(--panel);border:2px solid var(--neon);border-radius:18px;padding:24px 28px;text-align:center;box-shadow:var(--glow);min-width:280px}
+.title{margin:0 0 18px;font-weight:700;letter-spacing:.5px;line-height:1.05;text-shadow:0 0 8px #fff,0 0 22px var(--neon)}
+.title span{color:var(--neon)}
+.label{display:block;margin-bottom:8px}
+.input{
+  width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2a364b;background:#0d1117;color:var(--text);
+  margin-bottom:12px;outline:none;
+}
+.input:focus{border-color:var(--neon);box-shadow:0 0 0 2px #00ff6a33}
+.btn{cursor:pointer;background:var(--neon);color:#001b0b;border:0;padding:10px 18px;border-radius:10px;font:inherit;font-weight:700;box-shadow:var(--glow)}
+.hint{opacity:.7;margin-top:10px;font-size:12px}
+@keyframes kShake{10%,90%{transform:translateX(-1px)} 20%,80%{transform:translateX(2px)} 30%,50%,70%{transform:translateX(-4px)} 40%,60%{transform:translateX(4px)}}
+.shake{animation:kShake .35s}
+
+/* APP (game) */
+.wrap{position:relative;z-index:1;height:100%;width:100%;display:grid;place-items:center;padding:16px;gap:12px}
+.row{display:flex;gap:8px;align-items:center;justify-content:center}
+.names{text-align:center}
+.badge{width:10px;height:10px;border-radius:50%;display:inline-block}
+.white{background:#f7f7f7;box-shadow:0 0 0 2px #111 inset}
+.black{background:#111;box-shadow:0 0 0 2px #f7f7f7 inset}
+.role{font-size:12px;opacity:.85}
+
+.board-frame{position:relative;width:calc(var(--tile)*6);height:calc(var(--tile)*5);border:2px solid var(--neon);border-radius:14px;overflow:hidden;box-shadow:var(--glow);backdrop-filter:blur(1px)}
+canvas{display:block;width:100%;height:100%;image-rendering:pixelated}
+.console{width:100%;max-width:calc(var(--tile)*6);background:var(--panel-2);border:1px solid #263145;border-radius:10px;padding:10px 12px;min-height:52px;max-height:120px;overflow:auto;box-shadow:inset 0 0 0 1px #1c232f}
+
+/* MODAL */
+.modal{position:fixed;inset:0;display:none;z-index:10}
+.modal.is-open{display:block}
+.modal__backdrop{position:absolute;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(2px)}
+.modal__card{
+  position:relative; z-index:1; width:min(92vw,380px);
+  margin:10vh auto; background:var(--panel); border:2px solid var(--neon);
+  border-radius:18px; padding:24px 28px; box-shadow:var(--glow); text-align:center;
+}
+.modal__actions{display:flex; gap:10px; justify-content:flex-end; margin-top:8px}
+.btn--ghost{background:transparent; color:var(--text); border:1px solid #2a364b; box-shadow:none}
+.btn--ghost:hover{border-color:var(--neon)}

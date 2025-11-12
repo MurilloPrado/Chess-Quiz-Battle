@@ -9,7 +9,7 @@ from realtime.models import BoardState, StateMsg, MoveMsg
 
 # Se seu core expõe BOARD_W/BOARD_H via utils.constants, usamos nos cálculos.
 try:
-    from app.chess.utils.constants import BOARD_W, BOARD_H, PIECE_SYMBOL, WHITE
+    from chess.utils.constants import BOARD_W, BOARD_H, PIECE_SYMBOL, WHITE
 except Exception:
     # Fallback seguro (não deve acontecer no seu projeto)
     BOARD_W, BOARD_H, WHITE = 8, 8, 0
@@ -47,6 +47,12 @@ class GameScene(Scene):
 
         # layout calculado dinamicamente
         self._compute_layout(self.win_w, self.win_h)
+
+        gc = (ctx.get("realtime") or {}).get("game_ctx", {}) or {}
+        players_ctx = ctx.get("players") or gc.get("players") or {}
+        white_name = players_ctx.get("whiteName") or players_ctx.get("p1") or "Player 1"
+        black_name = players_ctx.get("blackName") or players_ctx.get("p2") or "Player 2"
+        self.players = {"whiteName": white_name, "blackName": black_name}
 
         rt = ctx.get("realtime")
         if rt:
@@ -88,10 +94,37 @@ class GameScene(Scene):
     
     async def _on_move_async(self, src_xy, dst_xy):
         ok = self.api.try_move(src_xy, dst_xy)
+        if not ok:
+            self.console.push("Movimento rejeitado")
+            return False, False
+
+        # quiz
         if getattr(self.api, "was_capture", False):
             self._start_quiz()
+        
+        # atualiza estado local
         self.game_ctx["turn"] = self.api.turn()
         self._sync_board_state()
+
+        # conecta todos
+        if getattr(self, "conn_mgr", None):
+            try: 
+                await self.conn_mgr.broadcast(
+                    StateMsg(
+                        board=self.game_ctx["board"],
+                        players=self.players
+                    )
+                )
+                await self.conn_mgr.broadcast(
+                    MoveMsg(
+                        src=src_xy, 
+                        dst=dst_xy
+                    )
+                )
+            except Exception:
+                self.console.push("Erro ao notificar os jogadores conectados.")
+
+        self.console.push(f"Vez de {self.game_ctx['turn']}")
         return ok, getattr(self.api, "was_capture", False)
 
 
@@ -102,6 +135,21 @@ class GameScene(Scene):
         self._sync_board_state()
         return True
 
+    def on_realtime_message(self, msg):
+        if isinstance(msg, StateMsg):
+            if hasattr(self.api, "import_board_linear"):
+                self.api.import_board_linear(msg.board.cells)
+            self.game_ctx["board"] = msg.board
+            self.game_ctx["turn"] = self.api.turn()
+            self.console.push("Estado do tabuleiro sincronizado.")
+
+            if getattr(msg, "players", None):
+                self.players = {
+                    "whiteName": msg.players.get("whiteName", self.players["whiteName"]),
+                    "blackName": msg.players.get("blackName", self.players["blackName"]),
+                }
+        elif isinstance(msg, MoveMsg):
+            self.console.push(f"Movimento recebido: {msg.src} -> {msg.dst}")
 
     def leave(self):
         pass
@@ -196,25 +244,25 @@ class GameScene(Scene):
         if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
             return SceneResult(next_scene="menu")
 
-        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+        # bloqueia movimento do host
+        role = (self.game_ctx or {}).get("role", "players")
+        if role == "host":
+            if self.sel is not None:
+                self.sel = None
+            return None
+        
+        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:  
             mx, my = ev.pos
             if self.board_rect.collidepoint(mx, my):
                 cx = (mx - self.board_rect.x) // self.tile
                 cy = (my - self.board_rect.y) // self.tile
-                # grade de cima para baixo → y 0 é topo do tabuleiro na tela,
-                # mas seu core costuma considerar y 0 na primeira fila (inferior/superior).
-                # Mantemos a mesma convenção do desenho (0 em cima) para clicar.
                 if 0 <= cx < BOARD_W and 0 <= cy < BOARD_H:
                     if self.sel is None:
                         self.sel = (cx, cy)
                     else:
                         ok = self._try_move_adapter(self.sel, (cx, cy))
                         if ok:
-                            self.console.push("Você realizou um movimento")
-                            # Aqui: IA/rede se houver...
-                            self.console.push("Sua vez... Faça seu movimento")
-                        else:
-                            self.console.push("Movimento inválido")
+                            self.console.push(f"Movido de {self.sel} para {(cx,cy)}")
                         self.sel = None
         return None
 
@@ -234,7 +282,7 @@ class GameScene(Scene):
 
         # 2) UCI-like (ex: a2a3). Precisamos converter (x,y) -> algébrica.
         try:
-            from app.chess.utils.coordinates import to_algebraic
+            from chess.utils.coordinates import to_algebraic
         except Exception:
             to_algebraic = None
 
@@ -260,6 +308,7 @@ class GameScene(Scene):
 
         # esquerda: tabuleiro 2D
         self._draw_board(screen)
+        self._draw_player_names(screen)
 
         # direita: mock janelas
         self._draw_mock_window(screen, self.right_3d_rect, "Tabuleiro 3D (visual)")
@@ -273,6 +322,8 @@ class GameScene(Scene):
     def _draw_board(self, screen: pygame.Surface):
         # moldura do tabuleiro
         pygame.draw.rect(screen, NEON, self.board_rect, 2)
+        self._name_font = font_consolas(28)
+
 
         light = (210, 240, 210)
         dark = (60, 140, 60)
@@ -288,12 +339,6 @@ class GameScene(Scene):
                 )
                 pygame.draw.rect(screen, light if (x + y) % 2 == 0 else dark, r)
 
-        # realce da seleção
-        if self.sel:
-            rx = self.board_rect.x + self.sel[0] * self.tile
-            ry = self.board_rect.y + self.sel[1] * self.tile
-            pygame.draw.rect(screen, (255, 255, 0), (rx, ry, self.tile, self.tile), 3)
-
         # peças
         for (x, y, glyph, color) in self._iter_pieces():
             tx = self.board_rect.x + x * self.tile + self.tile // 2
@@ -302,6 +347,19 @@ class GameScene(Scene):
             piece_surf = self.font.render(glyph, True, (0, 0, 0))
             rect = piece_surf.get_rect(center=(tx, ty))
             screen.blit(piece_surf, rect)
+
+    def _draw_player_names(self, screen):
+        cx = self.board_rect.centerx
+        pad = 8
+
+        # Pretas (topo)
+        top_y = self.board_rect.top - (self._name_font.get_height() + pad)
+        txt_top = self._name_font.render(self.players["blackName"], True, (230, 234, 244))
+        screen.blit(txt_top, txt_top.get_rect(midtop=(cx, top_y)))
+        # Brancas (base)
+        bot_y = self.board_rect.bottom + pad
+        txt_bot = self._name_font.render(self.players["whiteName"], True, (230, 234, 244))
+        screen.blit(txt_bot, txt_bot.get_rect(midtop=(cx, bot_y)))                                
 
     def _iter_pieces(self):
         """
@@ -331,7 +389,7 @@ class GameScene(Scene):
 
         # board esperado como lista linear ou matriz; mapeia para (x,y)
         # Se for linear: idx -> (x,y)
-        from app.chess.utils.coordinates import fr  # idx -> (x,y)
+        from chess.utils.coordinates import fr  # idx -> (x,y)
 
         # board pode conter tuplas (cor, tipo). Usamos PIECE_SYMBOL para desenhar.
         if isinstance(board, list) and len(board) == BOARD_W * BOARD_H:

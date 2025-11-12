@@ -1,22 +1,64 @@
-<!doctype html>
-<html lang="pt-br">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <title>Chess-Quiz Mobile</title>
-    <style>
-      body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; }
-      #log { background:#111; color:#0f0; padding:12px; min-height:120px; }
-      button { padding:10px 16px; }
-    </style>
-  </head>
-  <body>
-    <h3>Chess-Quiz Mobile</h3>
-    <div>
-      <input id="name" placeholder="Seu nome" />
-      <button id="join">Entrar</button>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Chess Quiz Battle</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <canvas id="bgGrid" aria-hidden="true"></canvas>
+
+  <main class="gate">
+    <div class="gate-card">
+      <h1 class="title"><span>[</span>Chess<br>Quiz<br>Battle<span>]</span></h1>
+      <button class="btn" id="openName">Entrar</button>
     </div>
-    <pre id="log"></pre>
-    <script src="/web/app.js"></script>
-  </body>
+  </main>
+
+  <!-- Modal de nome -->
+  <div class="modal" id="nameModal" aria-hidden="true">
+    <div class="modal__backdrop" id="nameBackdrop"></div>
+    <form class="modal__card" id="nameForm" role="dialog" aria-modal="true" aria-labelledby="nameTitle">
+      <h2 class="title" id="nameTitle"><span>[</span>Bem-vindo<span>]</span></h2>
+      <label for="playerName" class="label">Coloque o seu nome</label>
+      <input id="playerName" class="input" placeholder="Nome" maxlength="24" autocomplete="name" />
+      <div class="modal__actions">
+        <button type="button" class="btn btn--ghost" id="cancelName">Cancelar</button>
+        <button type="submit" class="btn">Entrar</button>
+      </div>
+    </form>
+  </div>
+
+  <script type="module" src="grid.js"></script>
+  <script type="module">
+    const openBtn   = document.getElementById('openName');
+    const modal     = document.getElementById('nameModal');
+    const backdrop  = document.getElementById('nameBackdrop');
+    const form      = document.getElementById('nameForm');
+    const input     = document.getElementById('playerName');
+    const cancelBtn = document.getElementById('cancelName');
+
+    function openModal(){
+      modal.classList.add('is-open');
+      modal.setAttribute('aria-hidden','false');
+      setTimeout(()=>input.focus(),10);
+    }
+    function closeModal(){
+      modal.classList.remove('is-open');
+      modal.setAttribute('aria-hidden','true');
+    }
+    openBtn.addEventListener('click', openModal);
+    cancelBtn.addEventListener('click', closeModal);
+    backdrop.addEventListener('click', closeModal);
+    window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && modal.classList.contains('is-open')) closeModal(); });
+
+    form.addEventListener('submit',(e)=>{
+      e.preventDefault();
+      const name = (input.value||'').trim();
+      if(!name){ input.focus(); input.classList.add('shake'); setTimeout(()=>input.classList.remove('shake'),350); return; }
+      location.href = `game.html?name=${encodeURIComponent(name)}`;
+    });
+  </script>
+</body>
 </html>

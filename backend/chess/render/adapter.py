@@ -51,3 +51,19 @@ class ChessAPI:
                 c, t = pc
                 m.append(("w" if c == WHITE else "b") + "PNBRQK"[t-1])
         return m
+    
+
+    def import_board_linear(self, cells):
+        # converte as peças
+        _map_type = {"P":1, "N":2, "B":3, "R":4, "Q":5, "K":6}
+        _map_color = {"w":0, "b":1}  # 0 WHITE, 1 BLACK
+        new_board = []
+        for code in cells:
+            if code is None:
+                new_board.append(None)
+                continue
+            color = _map_color[code[0]]
+            ptype = _map_type[code[1]]
+            new_board.append( (color, ptype))
+        # aplica no tabuleiro
+        self.b.board = new_board

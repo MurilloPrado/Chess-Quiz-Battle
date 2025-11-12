@@ -173,7 +173,7 @@ class LobbyScene(Scene):
             if ev.key == pygame.K_RETURN:
                 # precisa de pelo menos 2 jogadores
                 count = self.conn_mgr.client_count() if hasattr(self.conn_mgr,"client_count") else len(getattr(self.conn_mgr, "_clients", {}))
-                if count >= 2:
+                if count >= 0:
                     payload = {"realtime":{
                         "app": self.fastapi_app,
                         "conn_mgr": self.conn_mgr,
