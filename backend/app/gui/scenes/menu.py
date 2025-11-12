@@ -196,7 +196,7 @@ class MenuScene(Scene):
                 self.sel = (self.sel - 1) % len(self.items)
             elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self.items[self.sel] == "Jogar":
-                    return SceneResult(next_scene="game")
+                    return SceneResult(next_scene="lobby")
                 elif self.items[self.sel] == "Sair":
                     pygame.event.post(pygame.event.Event(pygame.QUIT))
         return None

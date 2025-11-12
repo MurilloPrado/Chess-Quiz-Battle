@@ -4,6 +4,8 @@ from app.gui.scene_manager import Scene, SceneResult
 from app.gui.widgets.console import ConsoleWidget
 from app.gui.widgets.matrix_rain import MatrixRain
 from app.gui.assets import font_consolas
+import qrcode
+from realtime.models import BoardState, StateMsg, MoveMsg
 
 # Se seu core expõe BOARD_W/BOARD_H via utils.constants, usamos nos cálculos.
 try:
@@ -46,12 +48,60 @@ class GameScene(Scene):
         # layout calculado dinamicamente
         self._compute_layout(self.win_w, self.win_h)
 
+        rt = ctx.get("realtime")
+        if rt:
+            self.fastapi_app = rt["app"]
+            self.conn_mgr = rt["conn_mgr"]
+            self.game_ctx = rt["game_ctx"]
+            self.ws_url = rt["ws_url"]
+        else:
+            # Fallback (se alguém abrir a cena direto sem lobby)
+            self.fastapi_app = None
+            self.conn_mgr = None
+            self.ws_url = None
+            self.game_ctx = {
+                "phase": "chess", "board": None, "turn": self.api.turn(),
+                "quiz": None, "on_move": self._on_move_async, "on_quiz_answer": self._on_quiz_answer_async
+            }
+
+        # CHANGED: agora que estamos na cena do jogo, garantimos fase e callbacks reais
+        self.game_ctx["phase"] = "chess"
+        self.game_ctx["on_move"] = self._on_move_async
+        self.game_ctx["on_quiz_answer"] = self._on_quiz_answer_async
+        self._sync_board_state()
+
+
         # console (logo abaixo do 3D)
         self.console = ConsoleWidget(self.right_console_inner)
-        self.console.push("Sua vez... Faça seu movimento")
+        self.console.push("Partida iniciada...")
 
         # seleção de casa no tabuleiro
         self.sel = None
+
+
+    def _sync_board_state(self):
+        board_list = self.api.export_board_linear()
+        self.game_ctx["board"] = BoardState(
+            cells=board_list, width=BOARD_W, height=BOARD_H
+        )
+
+    
+    async def _on_move_async(self, src_xy, dst_xy):
+        ok = self.api.try_move(src_xy, dst_xy)
+        if getattr(self.api, "was_capture", False):
+            self._start_quiz()
+        self.game_ctx["turn"] = self.api.turn()
+        self._sync_board_state()
+        return ok, getattr(self.api, "was_capture", False)
+
+
+    async def _on_quiz_answer_async(self, client_id: str, answer: str):
+        # seu fluxo real de quiz entra aqui
+        self.game_ctx["quiz"] = None
+        self.game_ctx["phase"] = "chess"
+        self._sync_board_state()
+        return True
+
 
     def leave(self):
         pass
