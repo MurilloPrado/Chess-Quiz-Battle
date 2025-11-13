@@ -8,6 +8,8 @@ from app.gui.assets import font_consolas
 from app.gui.scene_manager import Scene, SceneResult
 from realtime.server import create_app, get_local_ip, run_uvicorn_in_bg as run_bg
 
+START_GAME_EVENT = pygame.USEREVENT + 1
+
 NEON = (20, 230, 60)
 FG   = (220, 255, 220)
 
@@ -158,6 +160,11 @@ class LobbyScene(Scene):
         qr_side = max(160, int(s * 0.28))  # ~28% do menor lado da tela
         self.qr = make_qr_surface(self.http_url, qr_side)
 
+        # contador
+        self.countdown_total   = 10.0   # segundos
+        self.countdown_left    = None   # float ou None
+        self.countdown_running = False
+
     def leave(self): pass
 
     def _recalc_qr(self):
@@ -173,7 +180,7 @@ class LobbyScene(Scene):
             if ev.key == pygame.K_RETURN:
                 # precisa de pelo menos 2 jogadores
                 count = self.conn_mgr.client_count() if hasattr(self.conn_mgr,"client_count") else len(getattr(self.conn_mgr, "_clients", {}))
-                if count >= 0:
+                if count >= 2:
                     payload = {"realtime":{
                         "app": self.fastapi_app,
                         "conn_mgr": self.conn_mgr,
@@ -181,12 +188,72 @@ class LobbyScene(Scene):
                         "ws_url": self.ws_url,
                     }}
                     return SceneResult(next_scene="game", payload=payload)
+        if ev.type == START_GAME_EVENT:
+            # segurança extra: confirma se ainda tem 2 jogadores
+            count = self.conn_mgr.client_count() if hasattr(self.conn_mgr,"client_count") else len(getattr(self.conn_mgr, "_clients", {}))
+            if count >= 2:
+                payload = {"realtime":{
+                    "app": self.fastapi_app,
+                    "conn_mgr": self.conn_mgr,
+                    "game_ctx": self.game_ctx,
+                    "ws_url": self.ws_url,
+                }}
+                return SceneResult(next_scene="game", payload=payload)
         if ev.type == pygame.VIDEORESIZE:
             self._recalc_qr()
             return None
         return None
 
-    def update(self, dt): self.time += dt
+    def update(self, dt): 
+        self.time += dt
+
+        # quantidade de jogadores conectados
+        players = self._players()
+        count = len(players)
+
+        # se tiver pelo menos 2, contamos; se não, cancela
+        if count >= 2:
+            if not self.countdown_running:
+                # começou agora
+                self.countdown_running = True
+                self.countdown_left = self.countdown_total
+            else:
+                # continua a contagem
+                self.countdown_left -= dt
+                if self.countdown_left <= 0:
+                    # acabou o tempo: vai pra cena do jogo
+                    # manda nome dos players
+                    players = self._players()
+                    p1_name = players[0].get("name", "Player 1") if len(players) >= 1 else "Player 1"
+                    p2_name = players[1].get("name", "Player 2") if len(players) >= 2 else "Player 2"
+
+                    if self.game_ctx is None:
+                        self.game_ctx = {}
+
+                    # estrutura que o GameScene espera
+                    self.game_ctx["players"] = {
+                        "whiteName": p1_name,
+                        "blackName": p2_name,
+                        "p1": p1_name,
+                        "p2": p2_name,
+                    }
+
+                    payload = {
+                        "realtime": {
+                            "app": self.fastapi_app,
+                            "conn_mgr": self.conn_mgr,
+                            "game_ctx": self.game_ctx,
+                            "ws_url": self.ws_url,
+                        }
+                    }
+
+                    self.countdown_running = False
+                    self.countdown_left = None
+                    pygame.event.post(pygame.event.Event(START_GAME_EVENT))
+        else:
+            # menos de 2: reset do timer
+            self.countdown_running = False
+            self.countdown_left = None
 
     def _players(self):
         if hasattr(self.conn_mgr, "list_players"):
@@ -194,6 +261,39 @@ class LobbyScene(Scene):
         if hasattr(self.conn_mgr, "players"):
             return self.conn_mgr.players()
         return [{"id": cid, **meta} for cid,meta in getattr(self.conn_mgr,"_meta",{}).items()]
+    
+
+    def _draw_countdown_timer(self, screen: pygame.Surface):
+        """Círculo igual ao do layout: fundo preto, borda branca e número.
+        A borda vai sendo coberta de preto conforme o tempo passa."""
+        remaining = max(0.0, float(self.countdown_left or 0.0))
+        frac = remaining / self.countdown_total if self.countdown_total > 0 else 0.0
+        elapsed_frac = 1.0 - frac
+
+        w, h = screen.get_size()
+        radius = 26
+        margin = 24
+
+        # canto superior direito, perto do texto
+        cx = w - radius - margin
+        cy = int(h * 0.16)  # mesma faixa do "Aguardando Jogadores..."
+
+        # círculo base: disco preto + borda branca
+        pygame.draw.circle(screen, (0, 0, 0), (cx, cy), radius)
+        pygame.draw.circle(screen, (255, 255, 255), (cx, cy), radius, 3)
+
+        # arco preto cobrindo a borda branca (dando noção de tempo)
+        if elapsed_frac > 0:
+            rect = pygame.Rect(cx - radius, cy - radius, radius * 2, radius * 2)
+            start_angle = -math.pi / 2               # começa no topo
+            end_angle   = start_angle + elapsed_frac * 2 * math.pi
+            pygame.draw.arc(screen, (0, 0, 0), rect, start_angle, end_angle, 6)
+
+        # número no meio
+        num_font = font_consolas(24)
+        num = max(0, int(math.ceil(remaining)))
+        txt = num_font.render(str(num), True, (255, 255, 255))
+        screen.blit(txt, txt.get_rect(center=(cx, cy)))
 
     def render(self, screen):
         w, h = screen.get_size()
@@ -245,6 +345,10 @@ class LobbyScene(Scene):
         # Overlay CRT
         ensure_crt_overlay(self.crt_cache, w, h)
         draw_crt_overlay(screen, self.crt_cache, self.time)
+
+        # timer
+        if self.countdown_running and self.countdown_left is not None:
+            self._draw_countdown_timer(screen)
 
         self._recalc_qr()
 
