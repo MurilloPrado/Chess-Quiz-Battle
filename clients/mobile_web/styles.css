@@ -4,7 +4,7 @@
   --panel:#020508;
   --panel-2:#161a22;
   --text:#eaf4ff;
-  --tile:96px;
+  --tile: min(96px, (100vw - 32px) / 6);
   --glow:0 0 16px var(--neon), 0 0 32px var(--neon);
 }
 *{box-sizing:border-box}

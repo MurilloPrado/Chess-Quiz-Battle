@@ -5,8 +5,10 @@ const params = new URLSearchParams(location.search);
 const WS_URL = params.get('ws') || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
 let playerName = params.get('name') || 'Jogador'; // será sobrescrito pelo input no clique
 
+const PIECES_PATH = 'chess-pieces';
+
 const TILE = 96;             // manter sincronizado com --tile
-let COLS = 6, ROWS = 5;      // pode vir do servidor
+let COLS = 5, ROWS = 5;      // pode vir do servidor
 
 // Gate (bloqueio até Entrar)
 let started = false;
@@ -207,7 +209,7 @@ canvasBoard.addEventListener('click', (e)=>{
     return;
   }
   const [sx,sy] = sel; sel=null;
-  try { ws?.send(JSON.stringify({ type:'move', src:[sx,sy], dst:[x,y] })); } catch {}
+  try { ws?.send(JSON.stringify({ type:'move', from:[sx,sy], to:[x,y] })); } catch {}
 });
 
 /* =========================
@@ -223,6 +225,7 @@ function ensureWS(){
     ws.addEventListener('message', onMessage);
   });
 }
+
 
 function onMessage(ev){
   let msg; try{ msg = JSON.parse(ev.data); }catch{ return; }

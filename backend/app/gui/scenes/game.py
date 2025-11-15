@@ -4,12 +4,13 @@ from app.gui.scene_manager import Scene, SceneResult
 from app.gui.widgets.console import ConsoleWidget
 from app.gui.widgets.matrix_rain import MatrixRain
 from app.gui.assets import font_consolas
+from app.gui.sprites import load_piece_surfaces
 import qrcode
 from realtime.models import BoardState, StateMsg, MoveMsg
 
 # Se seu core expõe BOARD_W/BOARD_H via utils.constants, usamos nos cálculos.
 try:
-    from chess.utils.constants import BOARD_W, BOARD_H, PIECE_SYMBOL, WHITE
+    from chess.utils.constants import BOARD_W, BOARD_H, PIECE_SYMBOL, WHITE, BLACK
 except Exception:
     # Fallback seguro (não deve acontecer no seu projeto)
     BOARD_W, BOARD_H, WHITE = 8, 8, 0
@@ -48,6 +49,26 @@ class GameScene(Scene):
         # layout calculado dinamicamente
         self._compute_layout(self.win_w, self.win_h)
 
+        # load de imagens
+        try:
+            assets_pieces_dir = os.path.abspath(
+                os.path.join(
+                    os.path.dirname(__file__),  # app/gui
+                    '..',                       # app
+                    '..',                       # backend
+                    '..',
+                    '..',
+                    'assets',
+                    'chess-pieces'
+                )
+            )
+            print("DEBUG peças:", assets_pieces_dir)
+            self.atlas = load_piece_surfaces(assets_pieces_dir, self.tile)
+            print("DEBUG atlas len:", len(self.atlas))
+        except Exception as e:
+            print("ERRO carregando sprites:", e)
+            self.atlas = {}
+
         gc = (ctx.get("realtime") or {}).get("game_ctx", {}) or {}
         players_ctx = ctx.get("players") or gc.get("players") or {}
         white_name = players_ctx.get("whiteName") or players_ctx.get("p1") or "Player 1"
@@ -74,12 +95,15 @@ class GameScene(Scene):
         self.game_ctx["phase"] = "chess"
         self.game_ctx["on_move"] = self._on_move_async
         self.game_ctx["on_quiz_answer"] = self._on_quiz_answer_async
+        self.game_ctx["turn"] = self.api.turn()
         self._sync_board_state()
+        self._update_turn_ctx(log_to_console=False)
 
 
         # console (logo abaixo do 3D)
         self.console = ConsoleWidget(self.right_console_inner)
         self.console.push("Partida iniciada...")
+        self._update_turn_ctx(log_to_console=True) 
 
         # seleção de casa no tabuleiro
         self.sel = None
@@ -103,28 +127,9 @@ class GameScene(Scene):
             self._start_quiz()
         
         # atualiza estado local
-        self.game_ctx["turn"] = self.api.turn()
         self._sync_board_state()
+        self._update_turn_ctx(log_to_console=True)
 
-        # conecta todos
-        if getattr(self, "conn_mgr", None):
-            try: 
-                await self.conn_mgr.broadcast(
-                    StateMsg(
-                        board=self.game_ctx["board"],
-                        players=self.players
-                    )
-                )
-                await self.conn_mgr.broadcast(
-                    MoveMsg(
-                        src=src_xy, 
-                        dst=dst_xy
-                    )
-                )
-            except Exception:
-                self.console.push("Erro ao notificar os jogadores conectados.")
-
-        self.console.push(f"Vez de {self.game_ctx['turn']}")
         return ok, getattr(self.api, "was_capture", False)
 
 
@@ -139,8 +144,8 @@ class GameScene(Scene):
         if isinstance(msg, StateMsg):
             if hasattr(self.api, "import_board_linear"):
                 self.api.import_board_linear(msg.board.cells)
-            self.game_ctx["board"] = msg.board
-            self.game_ctx["turn"] = self.api.turn()
+            if msg.turn:
+                self.game_ctx["turn"] = msg.turn
             self.console.push("Estado do tabuleiro sincronizado.")
 
             if getattr(msg, "players", None):
@@ -299,6 +304,29 @@ class GameScene(Scene):
     def update(self, dt):
         self.matrix.update(dt)
 
+
+    def _update_turn_ctx(self, log_to_console: bool = False):
+        """
+        Lê o turno da API e normaliza para 'white' / 'black'
+        dentro de game_ctx['turn'], além de escrever no console.
+        """
+        raw = self.api.turn()  # pode ser "white"/"black" ou WHITE/BLACK
+
+        if raw in ("white", "w", WHITE):
+            self.game_ctx["turn"] = "white"
+            msg = "Vez das brancas"
+        elif raw in ("black", "b", BLACK):
+            self.game_ctx["turn"] = "black"
+            msg = "Vez das pretas"
+        else:
+            # Só cai aqui se vier algo completamente inesperado
+            self.game_ctx["turn"] = None
+            msg = f"Vez indefinida (valor recebido: {raw!r})"
+
+        if log_to_console and hasattr(self, "console"):
+            self.console.push(msg)
+
+
     def render(self, screen: pygame.Surface):
         # fundo
         self.matrix.draw(screen)
@@ -324,29 +352,41 @@ class GameScene(Scene):
         pygame.draw.rect(screen, NEON, self.board_rect, 2)
         self._name_font = font_consolas(28)
 
-
         light = (210, 240, 210)
         dark = (60, 140, 60)
 
-        # casas
+        # casas (espelha o Y na tela: linha 0 do core fica em cima ou embaixo conforme BOARD_H)
         for y in range(BOARD_H):
             for x in range(BOARD_W):
+                # linha desenhada (0 = topo da tela, BOARD_H-1 = base)
+                draw_row = (BOARD_H - 1) - y
                 r = pygame.Rect(
                     self.board_rect.x + x * self.tile,
-                    self.board_rect.y + y * self.tile,
+                    self.board_rect.y + draw_row * self.tile,
                     self.tile,
                     self.tile,
                 )
                 pygame.draw.rect(screen, light if (x + y) % 2 == 0 else dark, r)
 
-        # peças
-        for (x, y, glyph, color) in self._iter_pieces():
-            tx = self.board_rect.x + x * self.tile + self.tile // 2
-            ty = self.board_rect.y + y * self.tile + self.tile // 2
-            # aqui você pode substituir por sprites posteriormente
-            piece_surf = self.font.render(glyph, True, (0, 0, 0))
-            rect = piece_surf.get_rect(center=(tx, ty))
-            screen.blit(piece_surf, rect)
+        # peças (usa o mesmo espelhamento)
+        for (x, y, piece) in self._iter_pieces():
+            surf = self.atlas.get(piece)
+            draw_row = (BOARD_H - 1) - y
+
+            if surf:
+                draw_x = self.board_rect.x + x * self.tile
+                draw_y = self.board_rect.y + draw_row * self.tile
+                screen.blit(surf, (draw_x, draw_y))
+            else:
+                # fallback: desenha o glyph caso sprite não exista
+                glyph = PIECE_SYMBOL.get(piece, "?")
+                tx = self.board_rect.x + x * self.tile + self.tile // 2
+                ty = self.board_rect.y + draw_row * self.tile + self.tile // 2
+                font = font_consolas(36)
+                img = font.render(glyph, True, (10, 10, 10))
+                rect = img.get_rect(center=(tx, ty))
+                screen.blit(img, rect)
+
 
     def _draw_player_names(self, screen):
         cx = self.board_rect.centerx
@@ -363,17 +403,12 @@ class GameScene(Scene):
 
     def _iter_pieces(self):
         """
-        Estratégia:
-        - Se o adapter tiver render_pieces() → usar (x, y, glyph, color)
-        - Senão, tentamos ler a matriz do tabuleiro e mapear via PIECE_SYMBOL
-        """
-        if hasattr(self.api, "render_pieces"):
-            try:
-                yield from self.api.render_pieces()
-                return
-            except Exception:
-                pass
+        Retorna diretamente as peças do tabuleiro como:
+        (x, y, piece_tuple)
 
+        Onde piece_tuple é exatamente o que o core usa:
+        (WHITE, PIECE_PAWN), (BLACK, PIECE_KING), etc.
+        """
         # Fallback: tentar self.api.get_board() ou self.api.board
         board = None
         if hasattr(self.api, "get_board"):
@@ -387,19 +422,17 @@ class GameScene(Scene):
         if board is None:
             return
 
-        # board esperado como lista linear ou matriz; mapeia para (x,y)
-        # Se for linear: idx -> (x,y)
+        # board esperado como lista linear; idx -> (x,y)
         from chess.utils.coordinates import fr  # idx -> (x,y)
 
-        # board pode conter tuplas (cor, tipo). Usamos PIECE_SYMBOL para desenhar.
         if isinstance(board, list) and len(board) == BOARD_W * BOARD_H:
             for idx, piece in enumerate(board):
                 if piece is None:
                     continue
                 x, y = fr(idx)
-                glyph = PIECE_SYMBOL.get(piece, "?")
-                color = "white" if piece[0] == WHITE else "black"
-                yield (x, y, glyph, color)
+                # agora retornamos a peça inteira em vez de glyph
+                yield (x, y, piece)
+
 
     # ---------- Desenho: direita (mock janelas + 3D) ----------
 

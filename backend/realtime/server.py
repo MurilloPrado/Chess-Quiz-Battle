@@ -33,7 +33,9 @@ def create_app(static_dir: str, game_ctx: dict) -> FastAPI:
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
     app.state.conn_manager = ConnectionManager()
     app.state.game_ctx = game_ctx
+
     app.mount("/web", StaticFiles(directory=static_dir, html=True), name="web")
+    
     app.include_router(router)
     return app
 

@@ -147,6 +147,7 @@ class LobbyScene(Scene):
             return start.parents[4]
         project_root = find_root(here)
         static_dir = project_root / "clients" / "mobile_web"
+        assets_dir = project_root / "assets"
         if not static_dir.is_dir():
             raise RuntimeError(f"Pasta estática não encontrada: {static_dir}")
 
