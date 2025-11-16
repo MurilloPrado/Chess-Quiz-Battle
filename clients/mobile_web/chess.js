@@ -10,6 +10,7 @@ let COLS = 5, ROWS = 6;
 let ws, myRole = 'spectator', myColor = null, turn = null;
 let board = new Array(COLS * ROWS).fill(null);
 let baseBottomColor = null;
+let gamePhase = "lobby";
 
 function recomputeBaseBottomColor() {
   if (!Array.isArray(board) || board.length === 0) return;
@@ -60,6 +61,17 @@ async function fetchStateSnapshot() {
     if (!res.ok) return;
     const snap = await res.json();
 
+    // 🔥 Primeiro: fase
+    if (snap.phase) {
+      gamePhase = snap.phase;
+
+      // Se já estivermos em xadrez, não é mais lobby → não tem countdown
+      if (gamePhase === 'chess') {
+        started = true;
+        stopLobbyCountdown();
+      }
+    }
+
     // board
     if (snap.board) {
       const { cells, width, height } = snap.board;
@@ -84,6 +96,16 @@ async function fetchStateSnapshot() {
   } catch (e) {
     console.error('Erro ao buscar /state', e);
   }
+}
+
+function stopLobbyCountdown() {
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+  countdown = null;
+  // Redesenha o tabuleiro sem overlay de "Começando em..."
+  drawBoard();
 }
 
 /* ========== Sprites ========== */
@@ -510,7 +532,7 @@ function updatePlayersState(playersArr) {
       countdownTimer = null;
     }
     countdown = null;
-  } else if (activePlayers === 2 && !started && !countdownTimer) {
+  } else if (gamePhase === "lobby" && activePlayers >= 2 && !started) {
     countdown = 10;
     log('<i>Ambos os jogadores conectados. Iniciando em 10...</i>');
     countdownTimer = setInterval(() => {
@@ -585,6 +607,25 @@ function setTurnFromMessage(msgTurn) {
 
 // CHANGED: helper pra reaproveitar a lógica de aplicar um "state"
 function applyStateSnapshot(msg) {
+  // LOG pra debug
+  console.log(
+    "[WEB] state recebido:",
+    "phase =", msg.phase,
+    "| quiz =", msg.quiz ? "presente" : "null"
+  );
+
+  if (msg.phase) {
+    gamePhase = msg.phase;
+
+    // Se o backend diz que já estamos em CHESS,
+    // significa que o jogo já começou (não é mais lobby)
+    if (gamePhase === "chess") {
+      started = true;        // impede o countdown de rodar de novo
+      // se você tiver algum overlay de countdown/lobby, esconda aqui:
+      stopLobbyCountdown();  // vamos criar essa função abaixo
+    }
+  }
+
   if (msg.board) {
     const { cells, width, height } = msg.board;
     console.log('BOARD DO BACKEND:', cells);
@@ -599,6 +640,29 @@ function applyStateSnapshot(msg) {
 
     recomputeBaseBottomColor();
   }
+
+  const phase = msg.phase || null;
+  const hasQuiz = !!msg.quiz;
+
+  if (phase === "quiz" || hasQuiz) {
+  // Monta query string preservando o que já existe (ws, name, etc.)
+  const params = new URLSearchParams(window.location.search);
+
+  // Se ainda não tiver "color" na URL, colocamos com base em myColor do xadrez
+  if (!params.get("color") && myColor) {
+    // myColor aqui é 'w' ou 'b' (do chess.js)
+    const colorStr = myColor === "w" ? "white" : "black";
+    params.set("color", colorStr);
+  }
+
+  const search = params.toString() ? "?" + params.toString() : "";
+  const basePath = window.location.pathname.replace(/[^/]+$/, "");
+  const target = basePath + "quiz.html" + search;
+
+  console.log("[WEB] Entrou em phase=quiz, redirecionando para:", target);
+  window.location.href = target;
+  return;
+}
 
   if (Array.isArray(msg.players)) {
     updatePlayersState(msg.players);

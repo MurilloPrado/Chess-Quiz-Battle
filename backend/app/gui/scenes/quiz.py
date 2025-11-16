@@ -283,6 +283,291 @@ class DuelScene(Entity):
             self.right_piece.rotation_y -= 8 * dt
 
 
+class QuizUI(Entity):
+    def __init__(self):
+        super().__init__(parent=camera.ui)
+
+        self.neon_color = color.hex("#14e63c")
+        self.current_side = "white"
+        self.enabled = False
+
+        # -----------------------------
+        # Caixa da Pergunta
+        # -----------------------------
+        # origin no topo -> cresce só para baixo
+        self.box_question = Entity(
+            parent=camera.ui,
+            model='quad',
+            color=color.black,          # fundo preto
+            origin=(0, 0.5),            # topo central
+            position=(0, 0.42),
+            scale=(0.95, 0.20),         # largura / altura base
+            z=0,
+        )
+
+        # só contorno verde
+        self.box_question_border = Entity(
+            parent=self.box_question,
+            model=Quad(thickness=0.035),
+            color=self.neon_color,
+            scale=1.0,
+            z=-0.01,
+        )
+
+        # texto da pergunta, alinhado no topo-esquerdo da box
+        self.text_question = Text(
+            parent=self.box_question,
+            text="",
+            origin=(-0.5, 1),           # canto superior esquerdo
+            x=-0.46,
+            y=-0.04,
+            scale=1.3,                  # maior
+            color=color.white,
+            z=-0.02,
+        )
+
+        # -----------------------------
+        # Timer circular (dentro da box, canto direito)
+        # -----------------------------
+        self.timer_group = Entity(
+            parent=camera.ui,
+            scale=0.14,
+            z=-0.02,
+        )
+
+        self.timer_circle_bg = Entity(
+            parent=self.timer_group,
+            model='circle',
+            color=color.black,
+        )
+
+        self.timer_circle_border = Entity(
+            parent=self.timer_group,
+            model=Circle(resolution=64, mode='line'),
+            color=color.white,
+            scale=1.2,
+        )
+
+        self.timer_text = Text(
+            parent=self.timer_group,
+            text="15",
+            origin=(0, 0),
+            scale=2.0,
+            color=color.white,
+            z=-0.05,
+        )
+
+        # -----------------------------
+        # Barra de tempo (linha branca logo abaixo da box)
+        # -----------------------------
+        self.timer_bar = Entity(
+            parent=camera.ui,
+            model='quad',
+            color=color.white,
+            scale=(0.80, 0.012),
+            position=(0, 0.30),
+            z=-0.02,
+        )
+
+        # -----------------------------
+        # Alternativas
+        # -----------------------------
+        self.answers: list[Entity] = []
+        self._create_answer_buttons()
+
+        # -----------------------------
+        # K.O e vencedor (por enquanto só placeholder)
+        # -----------------------------
+        self.ko_label = Text(
+            parent=camera.ui,
+            text="K.O!",
+            origin=(0, 0),
+            scale=5,
+            color=color.red,
+            enabled=False,
+            position=(0, 0),
+        )
+
+        self.win_label = Text(
+            parent=camera.ui,
+            text="Vencedor!",
+            origin=(0, 0),
+            scale=3,
+            color=color.white,
+            enabled=False,
+            position=(0, -0.2),
+        )
+
+    # -----------------------------
+    # Cria os botões de alternativas
+    # -----------------------------
+    def _create_answer_buttons(self):
+        for i in range(4):
+            btn = Entity(
+                parent=camera.ui,
+                model='quad',
+                color=color.black,        # fundo preto
+                scale=(0.42, 0.10),
+                position=(0, -0.1),       # posição inicial; layout ajusta depois
+                origin=(0, 0),
+                z=0,
+            )
+
+            # borda neon
+            Entity(
+                parent=btn,
+                model=Quad(thickness=0.035),
+                color=self.neon_color,
+                scale=1.0,
+                z=-0.01,
+            )
+
+            txt = Text(
+                parent=btn,
+                text=f"{chr(97+i)}. alternativa",
+                origin=(-0.5, 0),
+                x=-0.40,
+                scale=1.1,                # maior
+                color=color.white,
+                z=-0.02,
+            )
+
+            btn.text_entity = txt
+            btn.index = i
+            btn.on_click = lambda b=btn: self.select_answer(b.index)
+
+            self.answers.append(btn)
+
+
+    # -----------------------------
+    # Quebra de linha manual (sem usar Text.wordwrap)
+    # -----------------------------
+    def _wrap_text(self, text: str, limit: int) -> str:
+        """
+        Quebra o texto em linhas de até 'limit' caracteres, tentando
+        quebrar em espaços. Retorna uma string com '\n'.
+        """
+        words = (text or "").split()
+        if not words:
+            return ""
+
+        lines = []
+        current = words[0]
+
+        for w in words[1:]:
+            if len(current) + 1 + len(w) <= limit:
+                current += " " + w
+            else:
+                lines.append(current)
+                current = w
+
+        lines.append(current)
+        return "\n".join(lines)
+
+
+    # -----------------------------
+    # Layout completo: lado, pergunta, alternativas
+    # -----------------------------
+    def update_layout(self, side: str, question: str, alternatives: list[str]):
+        self.current_side = side
+
+        # pergunta + altura dinâmica da box (cresce pra baixo)
+        raw_q = question or ""
+        wrapped_q = self._wrap_text(raw_q, 60)   # limite de ~60 chars por linha
+        self.text_question.text = wrapped_q
+
+        # altura baseada na quantidade de linhas
+        lines = wrapped_q.count("\n") + 1
+        extra_lines = max(0, lines - 1)
+        self.box_question.scale_y = 0.20 + extra_lines * 0.04
+
+        # posição da box: branca à esquerda, preta à direita
+        box_x = -0.25 if side == "white" else 0.25
+        self.box_question.x = box_x
+
+        # linha branca logo abaixo da borda inferior
+        bottom_y = self.box_question.y - self.box_question.scale_y
+        self.timer_bar.x = box_x
+        self.timer_bar.y = bottom_y - 0.02
+
+        # timer dentro da box, canto direito
+        self.timer_group.x = box_x + self.box_question.scale_x * 0.42
+        self.timer_group.y = self.box_question.y - self.box_question.scale_y * 0.30
+
+        # posições das alternativas:
+        # atacante à esquerda (white) -> alternativas à direita
+        # atacante à direita (black)  -> alternativas à esquerda
+        if side == "white":
+            col1_x, col2_x = 0.12, 0.55   # direita
+        else:
+            col1_x, col2_x = -0.55, -0.12 # esquerda
+
+        row1_y, row2_y = -0.05, -0.28
+        positions = [
+            (col1_x, row1_y),
+            (col2_x, row1_y),
+            (col1_x, row2_y),
+            (col2_x, row2_y),
+        ]
+
+        for i, btn in enumerate(self.answers):
+            btn.position = positions[i]
+            if i < len(alternatives):
+                alt_raw = alternatives[i] or ""
+                # limite menor porque a caixa é mais estreita
+                alt_wrapped = self._wrap_text(alt_raw, 45)
+                btn.text_entity.text = f"{chr(97+i)}. {alt_wrapped}"
+            else:
+                btn.text_entity.text = ""
+
+    # -----------------------------
+    # Timer (número + barra + círculo)
+    # -----------------------------
+    def update_timer(self, remaining: float, max_time: float):
+        if max_time <= 0:
+            frac = 0.0
+        else:
+            t = max(0.0, min(remaining, max_time))
+            frac = t / max_time
+
+        # número
+        self.timer_text.text = str(int(math.ceil(remaining)))
+
+        # barra diminuindo
+        self.timer_bar.scale_x = 0.80 * frac
+
+        # círculo “esvaziando”
+        self.timer_circle_border.rotation_z = lerp(360, 0, frac)
+        self.timer_circle_border.color = color.white if frac > 0.3 else color.red
+
+    # -----------------------------
+    # Clique na alternativa (feedback local)
+    # -----------------------------
+    def select_answer(self, idx: int):
+        for btn in self.answers:
+            btn.color = color.black
+            btn.text_entity.color = color.white
+
+        self.answers[idx].color = color.rgb(25, 25, 25)
+        self.answers[idx].text_entity.color = self.neon_color
+        print(f"[quiz3d_client] Resposta clicada no viewer (idx={idx})")
+
+    # -----------------------------
+    # Efeitos de fim (placeholder)
+    # -----------------------------
+    def show_ko(self):
+        self.ko_label.enabled = True
+        self.ko_label.scale = 1
+        self.ko_label.animate_scale(7, duration=0.5, curve=curve.out_expo)
+
+    def show_winner(self, winner: str):
+        self.win_label.text = f"{winner} venceu!"
+        self.win_label.enabled = True
+        self.win_label.scale = 1
+        self.win_label.animate_scale(4, duration=0.5, curve=curve.out_expo)
+
+
+
 # ================= WS EM THREAD =================
 
 async def ws_consumer():
@@ -342,6 +627,8 @@ camera.look_at(BASE_CAMERA_LOOK)
 camera.fov = 60
 
 duel_scene = DuelScene()
+quiz_ui = QuizUI()
+quiz_ui.enabled = False
 
 _last_battle_id = None
 _last_phase = None
@@ -368,21 +655,36 @@ def update():
     # Se nunca entrou em quiz ainda, só ignora
     if phase == "quiz" and quiz:
         _ever_had_quiz = True
-        battle_id = quiz.get("battleId")
 
+        current_side = quiz.get("currentSide", "white")
+        question = quiz.get("question", "")
+        alts = quiz.get("alternatives") or quiz.get("choices") or []
+
+        quiz_ui.enabled = True
+        quiz_ui.update_layout(current_side, question, alts)
+
+        remaining = quiz.get("remainingTime", 15)
+        max_time = quiz.get("maxTime", 15)
+        quiz_ui.update_timer(remaining, max_time)
+
+        # --- peças 3D continuam como antes ---
+        battle_id = quiz.get("battleId")
         if battle_id != _last_battle_id:
             _last_battle_id = battle_id
             duel_scene.set_duel_from_quiz(quiz)
         else:
-            current_side = quiz.get("currentSide", "white")
             if current_side != duel_scene.current_side:
                 duel_scene.focus_on_side(current_side)
-                duel_scene.ui_player.text = f"Vez das {'Brancas' if current_side == 'white' else 'Pretas'}"
+                duel_scene.ui_player.text = (
+                    f"Vez das {'Brancas' if current_side == 'white' else 'Pretas'}"
+                )
+
         return
 
     # Se já teve quiz e agora phase NÃO é quiz -> FECHA APP
     if _ever_had_quiz and phase != "quiz":
         print("[quiz3d_client] Quiz terminou, fechando viewer 3D.")
+        quiz_ui.enabled = False
         application.quit()
         sys.exit(0)
 
