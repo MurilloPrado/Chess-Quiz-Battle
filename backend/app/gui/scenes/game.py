@@ -1,11 +1,15 @@
 import os
 import pygame
+import json
+import random
+import subprocess
+import sys
+from pathlib import Path
 from app.gui.scene_manager import Scene, SceneResult
 from app.gui.widgets.console import ConsoleWidget
 from app.gui.widgets.matrix_rain import MatrixRain
 from app.gui.assets import font_consolas
 from app.gui.sprites import load_piece_surfaces
-import qrcode
 from realtime.models import BoardState, StateMsg, MoveMsg
 
 # Se seu core expõe BOARD_W/BOARD_H via utils.constants, usamos nos cálculos.
@@ -19,6 +23,21 @@ except Exception:
 NEON = (20, 230, 60)
 BG_BORDER = 3
 
+def _load_quiz_data():
+    # sobe 3 níveis e entra na pasta 'quiz'
+    base_dir = Path(__file__).resolve().parents[3] / "quiz"
+    
+    quiz_file = base_dir / "QUIZ.json"
+
+    if not quiz_file.exists():
+        print(f"ATENÇÃO: quiz.json não encontrado em: {quiz_file}")
+        return []
+
+    with open(quiz_file, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+QUIZ_DATA = _load_quiz_data()
+
 
 class GameScene(Scene):
     """
@@ -31,6 +50,7 @@ class GameScene(Scene):
     def __init__(self, window_size: tuple[int, int], chess_api):
         self.win_w, self.win_h = window_size
         self.api = chess_api
+        self.quiz3d_proc = None
 
         # imagens opcionais do lado direito
         self._board3d_img = None
@@ -109,6 +129,96 @@ class GameScene(Scene):
         self.sel = None
 
 
+    def _pick_random_question(self):
+        return random.choice(QUIZ_DATA)
+    
+    
+    def _launch_ursina_viewer(self):
+        """
+        Abre o quiz3d_client.py apenas se ainda não tiver um processo rodando.
+        O próprio viewer se encerra quando o quiz termina (phase != 'quiz').
+        """
+        # se já existe e ainda está rodando, não faz nada
+        if self.quiz3d_proc and self.quiz3d_proc.poll() is None:
+            return
+
+        script_path = Path(__file__).resolve().parent / "quiz.py"
+        if not script_path.exists():
+            print("Viewer 3D não encontrado:", script_path)
+            return
+
+        try:
+            self.quiz3d_proc = subprocess.Popen([sys.executable, str(script_path)])
+            print("Viewer 3D iniciado (pid:", self.quiz3d_proc.pid, ")")
+        except Exception as e:
+            print("Falha ao iniciar viewer 3D:", e)
+
+    def _start_quiz(self):
+        """
+        Inicia o modo quiz depois de uma captura.
+        Usa self.api.last_battle pra montar o 'duelo' que o front 3D vai renderizar.
+        """
+        battle = getattr(self.api, "last_battle", None)
+        if not battle:
+            # não deveria acontecer se was_capture == True, mas garantimos
+            return
+
+        # atacante SEMPRE começa respondendo
+        current_side = battle["attacker_color"]  # "white" ou "black"
+        q = self._pick_random_question()
+
+        # CHANGED: Muda a fase pro front saber que agora é tela de quiz
+        self.game_ctx["phase"] = "quiz"
+
+        # Estrutura que o front (web / 3D) vai usar para montar a tela
+        self.game_ctx["quiz"] = {
+            "battleId": random.randint(1, 10_000_000),   # só pra diferenciar batalhas
+            "attacker": {
+                "color": battle["attacker_color"],       # "white"/"black"
+                "piece": battle["attacker_type"],        # "pawn"/"bishop"/...
+                # nomes de modelos 3D (você casa isso no front):
+                "model": f"{battle['attacker_type'].capitalize()} hologram",
+            },
+            "defender": {
+                "color": battle["defender_color"],
+                "piece": battle["defender_type"],
+                "model": f"{battle['defender_type'].capitalize()} hologram",
+            },
+            # lado da vez no quiz
+            "currentSide": current_side,                 # "white" ou "black"
+            # pergunta atual
+            "question": q["pergunta"],
+            "choices": q["alternativas"],
+            "correctIndex": q["correta"],
+            "timer": 15,                                 # em segundos (UI controla)
+        }
+
+        # log no console
+        atacante_nome = "Brancas" if current_side == "white" else "Pretas"
+        self.console.push(f"Quiz iniciado! {atacante_nome} atacaram, vez delas responderem.")
+
+        self._launch_ursina_viewer()
+
+    def _next_quiz_round(self, next_side: str):
+        """
+        Continua o bate-bola do quiz, trocando jogador e sorteando nova pergunta.
+        Mantém a mesma batalha (mesmas peças duelando).
+        """
+        if not self.game_ctx.get("quiz"):
+            return
+
+        q = self._pick_random_question()
+        self.game_ctx["phase"] = "quiz"
+        self.game_ctx["quiz"]["currentSide"] = next_side
+        self.game_ctx["quiz"]["question"] = q["pergunta"]
+        self.game_ctx["quiz"]["choices"] = q["alternativas"]
+        self.game_ctx["quiz"]["correctIndex"] = q["correta"]
+        self.game_ctx["quiz"]["timer"] = 15
+
+        nome = "Brancas" if next_side == "white" else "Pretas"
+        self.console.push(f"Quiz continua! Agora é a vez das {nome}.")
+
+
     def _sync_board_state(self):
         board_list = self.api.export_board_linear()
         self.game_ctx["board"] = BoardState(
@@ -134,11 +244,54 @@ class GameScene(Scene):
 
 
     async def _on_quiz_answer_async(self, client_id: str, answer: str):
-        # seu fluxo real de quiz entra aqui
-        self.game_ctx["quiz"] = None
+        """
+        answer vem da web como string.
+        Sugestão: mandar sempre o índice da alternativa ("0", "1", "2"...).
+        """
+        if self.game_ctx.get("phase") != "quiz":
+            return False  # nada a fazer
+
+        quiz = self.game_ctx.get("quiz") or {}
+        if not quiz:
+            return False
+
+        try:
+            answer_idx = int(answer)
+        except Exception:
+            # resposta inválida, ignora
+            return False
+
+        correct_idx = quiz.get("correctIndex", -1)
+        current_side = quiz.get("currentSide")  # "white" ou "black"
+
+        if answer_idx == correct_idx:
+            # ACERTOU -> continua o bate-bola
+            # troca o lado da vez
+            next_side = "white" if current_side == "black" else "black"
+            self._next_quiz_round(next_side)
+            # False = quiz CONTINUA
+            return False
+
+        # ERROU -> fim da batalha
+        loser_side = current_side
+        winner_side = "white" if loser_side == "black" else "black"
+
+        # resolve tabuleiro: só a peça do vencedor fica viva
+        if hasattr(self.api, "resolve_battle"):
+            self.api.resolve_battle(winner_side)
+
+        # volta para fase xadrez
         self.game_ctx["phase"] = "chess"
+        self.game_ctx["quiz"] = None
         self._sync_board_state()
+        self._update_turn_ctx(log_to_console=True)
+
+        msg = "Brancas" if winner_side == "white" else "Pretas"
+        self.console.push(f"Quiz encerrado. {msg} venceram a batalha!")
+
+        # True = quiz terminou
         return True
+
 
     def on_realtime_message(self, msg):
         if isinstance(msg, StateMsg):

@@ -16,7 +16,9 @@ class ConnectionManager:
         await ws.accept()
         self._clients[client_id] = ws
 
-    def set_meta(self, client_id: str, meta: dict):
+    def set_meta(self, client_id, meta):
+        if client_id not in self._meta:
+            meta["joinOrder"] = len(self._meta)  # 0 = brancas, 1 = pretas
         self._meta[client_id] = meta
 
     def remove(self, client_id: str):
@@ -24,8 +26,12 @@ class ConnectionManager:
         self._meta.pop(client_id, None)
 
     def list_players(self):
+        ordered = sorted(
+            self._meta.items(),
+            key=lambda kv: kv[1].get("joinOrder", 9999)
+        )
         return [
-            {"id": cid, **meta} for cid, meta in self._meta.items()
+            {"id": cid, **meta} for cid, meta in ordered
         ]
 
     async def send_personal(self, client_id: str, message: dict):

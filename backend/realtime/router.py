@@ -90,15 +90,16 @@ async def ws_endpoint(
 
             elif kind == "quiz_answer":
                 msg = QuizAnswerMsg.model_validate(data)
-                done = await ctx["on_quiz_answer"](cid, msg.answer)
-                if done:
-                    await mgr.broadcast(StateMsg(
-                        phase=ctx["phase"],
-                        board=ctx.get("board"),
-                        turn=ctx.get("turn"),
-                        quiz=ctx.get("quiz"),
-                        players=mgr.list_players(),
-                    ).model_dump())
+                await ctx["on_quiz_answer"](cid, msg.answer)
+
+                # Sempre manda o snapshot atualizado, independente de ter acabado ou não
+                await mgr.broadcast(StateMsg(
+                    phase=ctx["phase"],
+                    board=ctx.get("board"),
+                    turn=ctx.get("turn"),
+                    quiz=ctx.get("quiz"),
+                    players=mgr.list_players(),
+                ).model_dump())
 
     except WebSocketDisconnect:
         mgr.remove(cid)

@@ -77,9 +77,6 @@ async function fetchStateSnapshot() {
 
     // players
     if (snap.players) {
-      const white = snap.players.whiteName || snap.players.p1 || 'Player 1';
-      const black = snap.players.blackName || snap.players.p2 || 'Player 2';
-      setPlayersUI(white, black);
       updatePlayersState(snap.players);
     }
 
@@ -180,8 +177,10 @@ function computePreviewMoves(x, y) {
   const code = board[idx(x, y)];
   if (!code) return moves;
 
-  const color = code[0]; // 'w' ou 'b'
-  const type  = code[1]; // 'P','N','B','R','Q','K'
+  const { color, type } = parseCode(code);
+  if (!color || !type) {
+    return moves; // se não entendeu a peça, não tenta gerar movimentos
+  }
   const dir   = (color === 'w') ? -1 : 1; // peão branco sobe (y-1), preto desce (y+1)
 
   const isEnemy = (tx, ty) => {
@@ -297,18 +296,55 @@ function computePreviewMoves(x, y) {
   return moves;
 }
 
+// Interpreta o valor que vem do backend e tenta extrair cor + tipo
+function parseCode(code) {
+  if (!code) return { color: null, type: null };
+
+  // Caso clássico: "wP", "bQ" etc.
+  if (typeof code === 'string') {
+    if (code.length >= 2 && (code[0] === 'w' || code[0] === 'b')) {
+      return { color: code[0], type: code[1] };
+    }
+
+    // Só uma letra: "P", "p" etc.
+    if (code.length === 1) {
+      return { 
+        color: code === code.toUpperCase() ? 'w' : 'b',
+        type: code.toUpperCase()
+      };
+    }
+
+    // Tenta achar uma letra de peça dentro do texto (P N B R Q K)
+    const match = code.match(/[PNBRQK]/i);
+    if (match) {
+      const t = match[0];
+      return { 
+        color: t === t.toUpperCase() ? 'w' : 'b',
+        type: t.toUpperCase()
+      };
+    }
+  }
+
+  // Se não entendeu, desenha um "?"
+  return { color: null, type: '?' };
+}
+
+
 function drawGlyph(x, y, code) {
-  const color = code[0]; // 'w' | 'b'
-  const type = code[1];  // 'P','N','B','R','Q','K'
-  bctx.fillStyle = (color === 'w') ? '#eafff5' : '#02110a';
+  const { color, type } = parseCode(code);
+
+  const glyph = type || '?'; // se não conseguir, coloca ?
+
+  bctx.fillStyle = (color === 'b') ? '#02110a' : '#eafff5';
   bctx.textAlign = 'center';
   bctx.textBaseline = 'middle';
   bctx.font = Math.floor(TILE * 0.56) + 'px Consolas, monospace';
   bctx.shadowColor = '#00ff6a';
   bctx.shadowBlur = 8;
-  bctx.fillText(type, x * TILE + TILE / 2, y * TILE + TILE / 2);
+  bctx.fillText(glyph, x * TILE + TILE / 2, y * TILE + TILE / 2);
   bctx.shadowBlur = 0;
 }
+
 
 /* ========== Draw board ========== */
 
@@ -551,6 +587,8 @@ function setTurnFromMessage(msgTurn) {
 function applyStateSnapshot(msg) {
   if (msg.board) {
     const { cells, width, height } = msg.board;
+    console.log('BOARD DO BACKEND:', cells);
+    
     if (Array.isArray(cells)) board = cells.slice();
     if (width && height) {
       COLS = width;
