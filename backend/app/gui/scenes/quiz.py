@@ -15,10 +15,41 @@ from ursina.shaders import unlit_shader
 
 WS_URL = "ws://192.168.100.49:8765/ws"   # <-- AJUSTE AQUI
 VIEWER_NAME = "Hologram Viewer"
+DEBUG_LOCAL = False
 
 latest_state = None
 latest_state_lock = threading.Lock()
 
+FAKE_QUIZ = {
+    "battleId": 1,
+    "attacker": {
+        "color": "white",
+        "piece": "pawn",
+        "model": "Pawn hologram",
+    },
+    "defender": {
+        "color": "black",
+        "piece": "pawn",
+        "model": "Pawn hologram",
+    },
+    "currentSide": "white",
+    "question": (
+        "De acordo com Alan Turing, é possível criar um programa que analisa "
+        "outro programa e diz se ele vai entrar em loop?"
+    ),
+    "choices": [
+        "Sim, qualquer algoritmo pode ser analisado dessa forma.",
+        "Não, esse problema é indecidível para máquinas de Turing.",
+        "Apenas se o programa tiver laços finitos conhecidos.",
+        "Somente em linguagens de alto nível com tipagem estática."
+    ],
+    "correctIndex": 1,
+    "remainingTime": 15,
+    "maxTime": 15,
+}
+
+_fake_timer_value = 15.0
+_fake_last_switch = time.time()
 
 def set_latest_state(data: dict):
     global latest_state
@@ -59,19 +90,11 @@ class DuelScene(Entity):
 
         self.current_side = "white"
 
-        self.ui_question = Text(
-            text="Aguardando batalha...",
-            parent=camera.ui,
-            origin=(0, 0),
-            position=(0, 0.4),
-            scale=1,
-            color=color.white,
-        )
         self.ui_player = Text(
             text="",
             parent=camera.ui,
             origin=(0, 0),
-            position=(0, 0.32),
+            position=(0, 0.21),
             scale=0.8,
             color=color.lime,
         )
@@ -145,7 +168,7 @@ class DuelScene(Entity):
         - is_left=False -> peça menor, ao fundo, à direita (pawn_back)
         """
         if is_left:
-            x, y, z = -8, -5, 5
+            x, y, z = -12, -5, 5
             scale_val = 3.2
             rot_y = 110
             shadow_scale = (3.6, 3.6, 3.6)
@@ -186,7 +209,6 @@ class DuelScene(Entity):
     def set_duel_from_quiz(self, quiz: dict):
         if not quiz:
             self.enabled = False
-            self.ui_question.text = "Aguardando batalha..."
             self.ui_player.text = ""
             return
 
@@ -222,7 +244,6 @@ class DuelScene(Entity):
         self._entry_t = 0.0
         self._do_entry_anim = True
 
-        self.ui_question.text = question or "Sem pergunta"
         self.ui_player.text = f"Vez das {'Brancas' if current_side == 'white' else 'Pretas'}"
 
         camera.position = BASE_CAMERA_POS
@@ -288,6 +309,7 @@ class QuizUI(Entity):
         super().__init__(parent=camera.ui)
 
         self.neon_color = color.hex("#14e63c")
+        # self.neon_color = color.hex("#1900ff")
         self.current_side = "white"
         self.enabled = False
 
@@ -297,64 +319,78 @@ class QuizUI(Entity):
         # origin no topo -> cresce só para baixo
         self.box_question = Entity(
             parent=camera.ui,
-            model='quad',
+            model=Quad(thickness=3),
             color=color.black,          # fundo preto
-            origin=(0, 0.5),            # topo central
-            position=(0, 0.42),
-            scale=(0.95, 0.20),         # largura / altura base
-            z=0,
+            origin=(-0.1, 0.5),            # topo central
+            position=(0, 0.43),
+            scale=(1, 0.20),         # largura / altura base
+            z=1,
         )
 
         # só contorno verde
         self.box_question_border = Entity(
             parent=self.box_question,
-            model=Quad(thickness=0.035),
+            model=Quad(thickness=3),
             color=self.neon_color,
-            scale=1.0,
-            z=-0.01,
+            origin=(-0.1, 0.07),
+            position=(0, -0.43),
+            scale=(1.02, 1.1),
+            z=2,
         )
 
         # texto da pergunta, alinhado no topo-esquerdo da box
         self.text_question = Text(
-            parent=self.box_question,
+            parent=camera.ui,
             text="",
-            origin=(-0.5, 1),           # canto superior esquerdo
-            x=-0.46,
-            y=-0.04,
-            scale=1.3,                  # maior
+            origin=(-0.5, 0.5),
+            scale=1,                  # maior
             color=color.white,
-            z=-0.02,
+            z=-1,
         )
 
         # -----------------------------
         # Timer circular (dentro da box, canto direito)
         # -----------------------------
         self.timer_group = Entity(
-            parent=camera.ui,
-            scale=0.14,
-            z=-0.02,
+            parent=self.box_question,
+            scale=(0.1, 0.4),
+            origin=(-0.5, 0.5),
+            position=(0.83, -0.06),
+            z=-1,
         )
 
         self.timer_circle_bg = Entity(
             parent=self.timer_group,
             model='circle',
             color=color.black,
+            scale=0.95,
+            z=-0.05,
         )
 
         self.timer_circle_border = Entity(
             parent=self.timer_group,
-            model=Circle(resolution=64, mode='line'),
+            model='circle',
             color=color.white,
-            scale=1.2,
+            scale=1.1,
+            z=-0.03,
+        )
+
+        # preenchimento preto que vai "comer" a borda
+        self.timer_circle_fill = Entity(
+            parent=self.timer_group,
+            model='circle',
+            color=color.black,
+            scale=0.0,        # começa sem preencher nada
+            z=-0.05,
         )
 
         self.timer_text = Text(
-            parent=self.timer_group,
+            parent=camera.ui,
             text="15",
             origin=(0, 0),
-            scale=2.0,
+            scale=1.6,
             color=color.white,
-            z=-0.05,
+            z=-1,
         )
 
         # -----------------------------
@@ -364,9 +400,9 @@ class QuizUI(Entity):
             parent=camera.ui,
             model='quad',
             color=color.white,
-            scale=(0.80, 0.012),
-            position=(0, 0.30),
-            z=-0.02,
+            scale=(0.90, 0.01),
+            position=(-0.8, 0.22),
+            z=1,
         )
 
         # -----------------------------
@@ -383,7 +419,7 @@ class QuizUI(Entity):
             text="K.O!",
             origin=(0, 0),
             scale=5,
-            color=color.red,
+            color=color.black,
             enabled=False,
             position=(0, 0),
         )
@@ -405,12 +441,12 @@ class QuizUI(Entity):
         for i in range(4):
             btn = Entity(
                 parent=camera.ui,
-                model='quad',
+                model=Quad(thickness=0.035),
                 color=color.black,        # fundo preto
-                scale=(0.42, 0.10),
+                scale=(0.42, 0.15),
                 position=(0, -0.1),       # posição inicial; layout ajusta depois
-                origin=(0, 0),
-                z=0,
+                origin=(-0.1, 0.5),
+                z=1,
             )
 
             # borda neon
@@ -418,18 +454,19 @@ class QuizUI(Entity):
                 parent=btn,
                 model=Quad(thickness=0.035),
                 color=self.neon_color,
-                scale=1.0,
-                z=-0.01,
+                position=(0, -0.1),
+                origin=(-0.1, 0.4),
+                scale=(1.02, 1.1),
+                z=2,
             )
 
             txt = Text(
-                parent=btn,
-                text=f"{chr(97+i)}. alternativa",
+                parent=camera.ui,
+                text="",
                 origin=(-0.5, 0),
-                x=-0.40,
-                scale=1.1,                # maior
+                scale=1,
                 color=color.white,
-                z=-0.02,
+                z=-2,
             )
 
             btn.text_entity = txt
@@ -438,6 +475,20 @@ class QuizUI(Entity):
 
             self.answers.append(btn)
 
+    def autoscale_text(self, txt: Text, max_width: float, max_height: float, min_scale=0.5, max_scale=1.1):
+        """
+        Ajusta txt.scale automaticamente para caber dentro de max_width x max_height.
+        Não usa application.step(), só recalcula de forma aproximada.
+        """
+        txt.scale = max_scale
+
+        # Faz algumas iterações reduzindo até caber ou chegar no mínimo
+        for _ in range(20):
+            # width/height do Text usam o texto atual e o scale atual
+            if (txt.width <= max_width and txt.height <= max_height) or txt.scale <= min_scale:
+                break
+
+            txt.scale *= 0.96
 
     # -----------------------------
     # Quebra de linha manual (sem usar Text.wordwrap)
@@ -471,38 +522,46 @@ class QuizUI(Entity):
     def update_layout(self, side: str, question: str, alternatives: list[str]):
         self.current_side = side
 
-        # pergunta + altura dinâmica da box (cresce pra baixo)
-        raw_q = question or ""
-        wrapped_q = self._wrap_text(raw_q, 60)   # limite de ~60 chars por linha
+        # Quebra de linha suave
+        wrapped_q = self._wrap_text(question, 55)
         self.text_question.text = wrapped_q
 
-        # altura baseada na quantidade de linhas
+        # Ajuste dinâmico da altura da box
         lines = wrapped_q.count("\n") + 1
-        extra_lines = max(0, lines - 1)
-        self.box_question.scale_y = 0.20 + extra_lines * 0.04
+        new_h = 0.16 + (lines - 1) * 0.035
+        self.box_question.scale_y = new_h
 
-        # posição da box: branca à esquerda, preta à direita
-        box_x = -0.25 if side == "white" else 0.25
-        self.box_question.x = box_x
-
-        # linha branca logo abaixo da borda inferior
-        bottom_y = self.box_question.y - self.box_question.scale_y
-        self.timer_bar.x = box_x
-        self.timer_bar.y = bottom_y - 0.02
-
-        # timer dentro da box, canto direito
-        self.timer_group.x = box_x + self.box_question.scale_x * 0.42
-        self.timer_group.y = self.box_question.y - self.box_question.scale_y * 0.30
-
-        # posições das alternativas:
-        # atacante à esquerda (white) -> alternativas à direita
-        # atacante à direita (black)  -> alternativas à esquerda
+        # Posicionamento da box esquerda/direita
         if side == "white":
-            col1_x, col2_x = 0.12, 0.55   # direita
+            bx = -0.45     # peça branca à esquerda → UI à esquerda
+            col1_x, col2_x = 0.05, 0.50
         else:
-            col1_x, col2_x = -0.55, -0.12 # esquerda
+            bx = 0.2      # peça preta à direita → UI à direita
+            col1_x, col2_x = -0.05, -0.50
 
-        row1_y, row2_y = -0.05, -0.28
+        self.box_question.x = bx
+
+        # topo-esquerdo da box, com padding
+        self.text_question.x = self.box_question.x - 0.35
+        self.text_question.y = self.box_question.y - 0.03
+
+        # timer dentro da box (canto direito)
+        self.timer_group.position = (self.box_question.scale_x * 0.5, -0.5)
+        self.timer_text.position = (self.box_question.x + self.box_question.scale_x * 0.495, 0.33)
+
+        # barra branca sempre sob a box
+        bottom_y = self.box_question.y - self.box_question.scale_y
+        self.timer_bar.x = bx + 0.1
+        self.timer_bar.y = bottom_y - 0.025
+        
+        max_w = self.box_question.scale_x * 2 - 0.06
+        max_h = self.box_question.scale_y * 2 - 0.06
+        self.autoscale_text(self.text_question, max_w, max_h)
+
+        # Alternativas alinhadas no protótipo
+        row1_y = -0.05
+        row2_y = -0.28
+
         positions = [
             (col1_x, row1_y),
             (col2_x, row1_y),
@@ -511,14 +570,23 @@ class QuizUI(Entity):
         ]
 
         for i, btn in enumerate(self.answers):
-            btn.position = positions[i]
-            if i < len(alternatives):
-                alt_raw = alternatives[i] or ""
-                # limite menor porque a caixa é mais estreita
-                alt_wrapped = self._wrap_text(alt_raw, 45)
-                btn.text_entity.text = f"{chr(97+i)}. {alt_wrapped}"
-            else:
-                btn.text_entity.text = ""
+                # 1) posição do botão (local à box_question)
+                x, y = positions[i]
+                btn.x = x
+                btn.y = y
+
+                # 2) texto da alternativa
+                alt = alternatives[i] if i < len(alternatives) else ""
+                txt = btn.text_entity
+                txt.text = f"{chr(97+i)}. {self._wrap_text(alt, 30)}"
+
+                btn_inner_w = btn.scale_x * 2 - 0.04
+                btn_inner_h = btn.scale_y * 2 - 0.02
+                self.autoscale_text(txt, btn_inner_w, btn_inner_h)
+                
+
+                txt.x = x - 0.15    # começa da esquerda do botão
+                txt.y = y -0.08               # centralizado na altura
 
     # -----------------------------
     # Timer (número + barra + círculo)
@@ -537,8 +605,10 @@ class QuizUI(Entity):
         self.timer_bar.scale_x = 0.80 * frac
 
         # círculo “esvaziando”
-        self.timer_circle_border.rotation_z = lerp(360, 0, frac)
-        self.timer_circle_border.color = color.white if frac > 0.3 else color.red
+        inner_start = 0.0     # sem preenchimento no início
+        inner_end   = 1.10    # círculo preto maior que a borda no final
+
+        self.timer_circle_fill.scale = lerp(inner_start, inner_end, 1 - frac)
 
     # -----------------------------
     # Clique na alternativa (feedback local)
@@ -594,6 +664,10 @@ async def ws_consumer():
 
 
 def start_ws_thread():
+    if DEBUG_LOCAL:
+        print("[quiz3d_client] DEBUG_LOCAL ativo: WS desabilitado.")
+        return None
+
     loop = asyncio.new_event_loop()
 
     def runner():
@@ -636,50 +710,81 @@ _ever_had_quiz = False  # para saber quando sair do quiz e fechar
 
 
 def update():
-    global _last_battle_id, _last_phase, _ever_had_quiz
+    global _last_battle_id, _last_phase, _ever_had_quiz, _fake_timer_value, FAKE_QUIZ
 
     dt = time.dt
     duel_scene.step(dt)
 
-    state = get_latest_state()
-    if not state:
-        return
+    # ======================================================
+    #        MODO DEBUG LOCAL (SEM WS, MAS COM PEÇAS)
+    # ======================================================
+    if DEBUG_LOCAL:
 
+        # reduz timer
+        _fake_timer_value -= dt
+        if _fake_timer_value <= 0:
+            _fake_timer_value = FAKE_QUIZ["maxTime"]
+
+            # alterna o lado, só para você visualizar a câmera girar
+            FAKE_QUIZ["currentSide"] = (
+                "black" if FAKE_QUIZ["currentSide"] == "white" else "white"
+            )
+            print("[DEBUG] trocou lado para:", FAKE_QUIZ["currentSide"])
+
+        FAKE_QUIZ["remainingTime"] = max(0, _fake_timer_value)
+
+        # monta o estado igual ao backend REAL monta
+        state = {
+            "phase": "quiz",
+            "quiz": FAKE_QUIZ,
+        }
+
+    else:
+        # ================= MODO NORMAL (com WS) =================
+        state = get_latest_state()
+        if not state:
+            return
+
+    # ================= fluxo normal continua ====================
     phase = state.get("phase")
     quiz = state.get("quiz")
 
-    if phase != _last_phase:
-        print(f"[quiz3d_client] phase -> {phase}")
-        _last_phase = phase
+     # ⬇️ SE JÁ TEVE QUIZ E O BACKEND SAIU DA FASE "quiz", FECHA A JANELA
+    if _ever_had_quiz and phase != "quiz":
+        print("[quiz3d_client] Quiz terminou, fechando viewer 3D.")
+        quiz_ui.enabled = False
+        application.quit()
+        sys.exit(0)
 
-    # Se nunca entrou em quiz ainda, só ignora
-    if phase == "quiz" and quiz:
-        _ever_had_quiz = True
-
-        current_side = quiz.get("currentSide", "white")
-        question = quiz.get("question", "")
-        alts = quiz.get("alternatives") or quiz.get("choices") or []
-
-        quiz_ui.enabled = True
-        quiz_ui.update_layout(current_side, question, alts)
-
-        remaining = quiz.get("remainingTime", 15)
-        max_time = quiz.get("maxTime", 15)
-        quiz_ui.update_timer(remaining, max_time)
-
-        # --- peças 3D continuam como antes ---
-        battle_id = quiz.get("battleId")
-        if battle_id != _last_battle_id:
-            _last_battle_id = battle_id
-            duel_scene.set_duel_from_quiz(quiz)
-        else:
-            if current_side != duel_scene.current_side:
-                duel_scene.focus_on_side(current_side)
-                duel_scene.ui_player.text = (
-                    f"Vez das {'Brancas' if current_side == 'white' else 'Pretas'}"
-                )
-
+    # se ainda não tem quiz nesse state, não desenha nada (mas NÃO fecha)
+    if not quiz:
         return
+
+    _ever_had_quiz = True
+
+    current_side = quiz.get("currentSide", "white")
+    question = quiz.get("question", "")
+    alts = quiz.get("alternatives") or quiz.get("choices") or []
+
+    # atualiza UI
+    quiz_ui.enabled = True
+    quiz_ui.update_layout(current_side, question, alts)
+    quiz_ui.update_timer(
+        quiz.get("remainingTime", 15),
+        quiz.get("maxTime", 15)
+    )
+
+    # === PEÇAS 3D (aqui é onde a mágica acontece no debug!) ===
+    battle_id = quiz.get("battleId")
+    if battle_id != _last_battle_id:
+        _last_battle_id = battle_id
+        duel_scene.set_duel_from_quiz(quiz)
+    else:
+        if current_side != duel_scene.current_side:
+            duel_scene.focus_on_side(current_side)
+            duel_scene.ui_player.text = (
+                f"Vez das {'Brancas' if current_side == 'white' else 'Pretas'}"
+            )
 
     # Se já teve quiz e agora phase NÃO é quiz -> FECHA APP
     if _ever_had_quiz and phase != "quiz":
