@@ -15,7 +15,7 @@ from ursina.shaders import unlit_shader
 
 WS_URL = "ws://192.168.100.49:8765/ws"   # <-- AJUSTE AQUI
 VIEWER_NAME = "Hologram Viewer"
-DEBUG_LOCAL = False
+DEBUG_LOCAL = True
 
 latest_state = None
 latest_state_lock = threading.Lock()
@@ -448,36 +448,41 @@ class QuizUI(Entity):
             z=-1,
         )
 
-        self.timer_circle_bg = Entity(
+        # arco que preenche
+        self.arc_mesh = Mesh()
+        self.arc_mesh.mode = 'triangle'
+        self.timer_arc = Entity(
             parent=self.timer_group,
-            model='circle',
-            color=color.black,
-            scale=0.95,
+            model=self.arc_mesh,
+            color=self.neon_color, # A cor neon da UI
+            scale=0.55,            # Ajustado para caber no seu layout
             z=-0.05,
         )
 
-        self.timer_circle_border = Entity(
-            parent=self.timer_group,
-            model='circle',
-            color=color.white,
-            scale=1.1,
-            z=-0.03,
-        )
-
-        # preenchimento preto que vai "comer" a borda
-        self.timer_circle_fill = Entity(
+        # circulo preto
+        self.timer_center_hole = Entity(
             parent=self.timer_group,
             model='circle',
             color=color.black,
-            scale=0.0,        # começa sem preencher nada
-            z=-0.05,
+            scale=0.95,             # Cria a borda
+            z=-0.04,
+        )
+
+        # onde vai preencher
+        self.timer_track_bg = Entity(
+            parent=self.timer_group,
+            model=Circle(resolution=90, mode='line', thickness=0.04), # Usa o modelo de linha
+            color=self.neon_color,  # Usa a cor neon para a borda
+            opacity=0.3,            # Deixa a trilha mais sutil
+            scale=0,
+            z=-0.06,
         )
 
         self.timer_text = Text(
-            parent=camera.ui,
-            text="15",
+            parent=self.timer_group,
+            text="50",
             origin=(0, 0),
-            scale=1.6,
+            scale=20,
             color=color.white,
             z=-1,
         )
@@ -636,7 +641,6 @@ class QuizUI(Entity):
 
         # timer dentro da box (canto direito)
         self.timer_group.position = (self.box_question.scale_x * 0.5, -0.5)
-        self.timer_text.position = (self.box_question.x + self.box_question.scale_x * 0.495, 0.33)
 
         # barra branca sempre sob a box
         bottom_y = self.box_question.y - self.box_question.scale_y
@@ -677,9 +681,41 @@ class QuizUI(Entity):
                 txt.x = x - 0.15    # começa da esquerda do botão
                 txt.y = y -0.08               # centralizado na altura
 
+
     # -----------------------------
     # Timer (número + barra + círculo)
     # -----------------------------
+    def _update_arc(self, ratio: float):
+        """
+        Atualiza o Mesh do arco. ratio vai de 0.0 a 1.0 (1.0 = cheio).
+        Desenha o preenchimento regressivo (quanto falta).
+        """
+        steps = 90  # mais steps = arco mais suave
+        angle_span = 360 * ratio
+
+        # Centro fixo no índice 0
+        vertices = [Vec3(0, 0, 0)]
+
+        # Gera vértices da borda
+        for i in range(steps + 1):
+            prop_i = i / steps
+            a = -90 - (prop_i * angle_span)
+            ang = math.radians(a)
+            x = math.cos(ang)
+            y = math.sin(ang)
+            vertices.append(Vec3(x, y, 0))
+
+        # Gera índices de triângulos em modo "triangle"
+        triangles = []
+        for i in range(1, len(vertices) - 1):
+            # sempre usando o centro (0) + dois pontos consecutivos da borda
+            triangles.append((0, i + 1, i ))
+
+        self.arc_mesh.vertices = vertices
+        self.arc_mesh.triangles = triangles
+        self.arc_mesh.generate()
+
+
     def update_timer(self, remaining: float, max_time: float):
         if max_time <= 0:
             frac = 0.0
@@ -694,10 +730,7 @@ class QuizUI(Entity):
         self.timer_bar.scale_x = 0.80 * frac
 
         # círculo “esvaziando”
-        inner_start = 0.0     # sem preenchimento no início
-        inner_end   = 1.10    # círculo preto maior que a borda no final
-
-        self.timer_circle_fill.scale = lerp(inner_start, inner_end, 1 - frac)
+        self._update_arc(frac)
 
     # -----------------------------
     # Clique na alternativa (feedback local)
