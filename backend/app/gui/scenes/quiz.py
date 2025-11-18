@@ -15,7 +15,7 @@ from ursina.shaders import unlit_shader
 
 WS_URL = "ws://192.168.100.49:8765/ws"   # <-- AJUSTE AQUI
 VIEWER_NAME = "Hologram Viewer"
-DEBUG_LOCAL = True
+DEBUG_LOCAL = False
 
 latest_state = None
 latest_state_lock = threading.Lock()
@@ -34,8 +34,7 @@ FAKE_QUIZ = {
     },
     "currentSide": "white",
     "question": (
-        "De acordo com Alan Turing, é possível criar um programa que analisa "
-        "outro programa e diz se ele vai entrar em loop?"
+        "De acordo com Alan Turing, é possível criar um programa que analisa outro programa e diz se ele vai entrar em loop?"
     ),
     "choices": [
         "Sim, qualquer algoritmo pode ser analisado dessa forma.",
@@ -671,7 +670,7 @@ class QuizUI(Entity):
                 # 2) texto da alternativa
                 alt = alternatives[i] if i < len(alternatives) else ""
                 txt = btn.text_entity
-                txt.text = f"{chr(97+i)}. {self._wrap_text(alt, 30)}"
+                txt.text = f"{chr(97+i)}. {self._wrap_text(alt, 25)}"
 
                 btn_inner_w = btn.scale_x * 2 - 0.04
                 btn_inner_h = btn.scale_y * 2 - 0.02
