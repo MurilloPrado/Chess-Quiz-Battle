@@ -15,7 +15,7 @@ from ursina.shaders import unlit_shader
 
 WS_URL = "ws://192.168.100.49:8765/ws"   # <-- AJUSTE AQUI
 VIEWER_NAME = "Hologram Viewer"
-DEBUG_LOCAL = True
+DEBUG_LOCAL = False
 
 latest_state = None
 latest_state_lock = threading.Lock()
@@ -24,8 +24,8 @@ FAKE_QUIZ = {
     "battleId": 1,
     "attacker": {
         "color": "white",
-        "piece": "knight",
-        "model": "Knight hologram",
+        "piece": "queen",
+        "model": "Queen hologram",
     },
     "defender": {
         "color": "black",
@@ -177,8 +177,8 @@ class DuelScene(Entity):
         - is_left=False -> peça menor, ao fundo, à direita (pawn_back)
         """
         if is_left:
-            x, y, z = -12, -5, 5
-            scale_val = 3.2
+            x, y, z = -9, -7, 5
+            scale_val = 3.8
             rot_y = 110
             shadow_scale = (3.6, 3.6, 3.6)
         else:
@@ -224,8 +224,8 @@ class DuelScene(Entity):
             return
 
         FRONT = {
-            "pos": Vec3(-12, -5, 5),
-            "scale": 3.2,
+            "pos": Vec3(-9, -7, 5),
+            "scale": 3.8,
             "rot_y": 110,
             "shadow_scale": (3.6, 3.6, 3.6)
         }
@@ -239,8 +239,11 @@ class DuelScene(Entity):
         if not self.is_flipped:
             # estado atual: esquerda na frente, direita atrás
             # alvo: esquerda vai para trás, direita vem para frente
-            piece_L_target = BACK
-            piece_R_target = FRONT
+            piece_L_target = BACK .copy()
+            piece_L_target["pos"] += Vec3(3, 0, 5)
+            piece_R_target = FRONT.copy()
+            piece_R_target["pos"] += Vec3(0, 1.5, 0)
+            piece_R_target["scale"] += -0.3
         else:
             # estado atual: esquerda atrás, direita na frente
             # alvo: volta pro layout original
@@ -342,14 +345,14 @@ class DuelScene(Entity):
             target_rot = 0
             do_swap = self.is_flipped
         else:
-            target_rot = 40
+            target_rot = 120
             do_swap = not self.is_flipped
 
 
         # gira o pivot, a câmera “dá a volta” mantendo o duelo no centro
         camera_pivot.animate_rotation_y(
             target_rot,
-            duration=0.7,
+            duration=1.7,
             curve=curve.in_out_quad
         )
 
