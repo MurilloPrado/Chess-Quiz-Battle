@@ -15,7 +15,7 @@ from ursina.shaders import unlit_shader
 
 WS_URL = "ws://192.168.100.49:8765/ws"   # <-- AJUSTE AQUI
 VIEWER_NAME = "Hologram Viewer"
-DEBUG_LOCAL = False
+DEBUG_LOCAL = True
 
 latest_state = None
 latest_state_lock = threading.Lock()
@@ -24,13 +24,13 @@ FAKE_QUIZ = {
     "battleId": 1,
     "attacker": {
         "color": "white",
-        "piece": "pawn",
-        "model": "Pawn hologram",
+        "piece": "knight",
+        "model": "Knight hologram",
     },
     "defender": {
         "color": "black",
-        "piece": "pawn",
-        "model": "Pawn hologram",
+        "piece": "queen",
+        "model": "Queen hologram",
     },
     "currentSide": "white",
     "question": (
@@ -60,12 +60,77 @@ def set_latest_state(data: dict):
 def get_latest_state():
     with latest_state_lock:
         return latest_state
+    
+def _make_neon_grid():
+    grid_color = color.hex("#27943b")
+    parent = Entity(parent=camera_pivot)
+
+    # --- linhas horizontais (faixas que vêm "pra frente") ---
+    grid_lines = 12        # quantas faixas
+    spacing_z = 1.5        # distância entre faixas
+    start_z = -8           # onde começa o grid
+    base_width = 26.0      # largura na faixa mais distante
+    width_growth = 3.2     # quanto aumenta a largura a cada faixa
+
+    for i in range(grid_lines):
+        z = start_z + i * spacing_z
+        width = base_width + i * width_growth
+        Entity(
+            parent=parent,
+            model='cube',
+            color=grid_color,
+            texture=None,
+            shader=unlit_shader,
+            position=(0, 0, z),
+            scale=(width, 0.03, 0.06),
+        )
+
+    # --- linhas verticais que convergem no "horizonte" ---
+    vert_count = 5          # quantidade de linhas verticais
+    bottom_width = 20.0     # espalhamento na base (perto da câmera)
+    top_width = 60.0        # espalhamento lá no fundo (perto do horizonte)
+    horizon_z = start_z - spacing_z
+    bottom_z = start_z + grid_lines * spacing_z
+
+    for j in range(-vert_count // 2, vert_count // 2 + 1):
+        t = j / float(vert_count // 2 or 1)  # -1 .. 1
+        x_top = t * top_width * 0.5
+        x_bottom = t * bottom_width * 0.5
+
+        x1, z1 = x_top, horizon_z
+        x2, z2 = x_bottom, bottom_z
+
+        mid_x = (x1 + x2) / 2.0
+        mid_z = (z1 + z2) / 2.0
+        dx = x2 - x1
+        dz = z2 - z1
+        length = math.sqrt(dx * dx + dz * dz)
+
+        angle_y = math.degrees(math.atan2(dx, dz))
+
+        Entity(
+            parent=parent,
+            model='cube',
+            color=grid_color,
+            texture=None,
+            shader=unlit_shader,
+            position=(mid_x, -0.6, mid_z),
+            rotation_y=angle_y,
+            scale=(0.06, 0.03, length),
+        )
+
+    return parent
 
 
 # ================= CENA 3D =================
 
-BASE_CAMERA_POS = Vec3(0, 12, -22)
-BASE_CAMERA_LOOK = Vec3(0, 0, 10)
+# comecei aqui
+
+# ponto médio entre as duas peças (centro do duelo)
+DUEL_CENTER = Vec3(0, -2, 9)
+
+BASE_CAMERA_POS = Vec3(0, 11, -26)   # posição **relativa** ao centro
+BASE_CAMERA_LOOK = DUEL_CENTER  # olhar para o centro do duelo
 
 
 class DuelScene(Entity):
@@ -76,7 +141,10 @@ class DuelScene(Entity):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.grid_entity = self._make_neon_grid()
+        self.scene_root = None
+        self.is_flipped = False
+
+        # self.grid_entity = self._make_neon_grid()
 
         self.left_piece = None
         self.right_piece = None
@@ -101,65 +169,6 @@ class DuelScene(Entity):
 
         self.enabled = False
 
-    def _make_neon_grid(self):
-        grid_color = color.hex("#27943b")
-        parent = Entity()
-
-        # --- linhas horizontais (faixas que vêm "pra frente") ---
-        grid_lines = 12        # quantas faixas
-        spacing_z = 1.5        # distância entre faixas
-        start_z = -8           # onde começa o grid
-        base_width = 26.0      # largura na faixa mais distante
-        width_growth = 3.2     # quanto aumenta a largura a cada faixa
-
-        for i in range(grid_lines):
-            z = start_z + i * spacing_z
-            width = base_width + i * width_growth
-            Entity(
-                parent=parent,
-                model='cube',
-                color=grid_color,
-                texture=None,
-                shader=unlit_shader,
-                position=(0, 0, z),
-                scale=(width, 0.03, 0.06),
-            )
-
-        # --- linhas verticais que convergem no "horizonte" ---
-        vert_count = 5          # quantidade de linhas verticais
-        bottom_width = 20.0     # espalhamento na base (perto da câmera)
-        top_width = 60.0        # espalhamento lá no fundo (perto do horizonte)
-        horizon_z = start_z - spacing_z
-        bottom_z = start_z + grid_lines * spacing_z
-
-        for j in range(-vert_count // 2, vert_count // 2 + 1):
-            t = j / float(vert_count // 2 or 1)  # -1 .. 1
-            x_top = t * top_width * 0.5
-            x_bottom = t * bottom_width * 0.5
-
-            x1, z1 = x_top, horizon_z
-            x2, z2 = x_bottom, bottom_z
-
-            mid_x = (x1 + x2) / 2.0
-            mid_z = (z1 + z2) / 2.0
-            dx = x2 - x1
-            dz = z2 - z1
-            length = math.sqrt(dx * dx + dz * dz)
-
-            angle_y = math.degrees(math.atan2(dx, dz))
-
-            Entity(
-                parent=parent,
-                model='cube',
-                color=grid_color,
-                texture=None,
-                shader=unlit_shader,
-                position=(mid_x, -0.6, mid_z),
-                rotation_y=angle_y,
-                scale=(0.06, 0.03, length),
-            )
-
-        return parent
 
     def _make_piece_with_shadow(self, model_name: str, is_left: bool, color_piece):
         """
@@ -205,6 +214,62 @@ class DuelScene(Entity):
             self._base_y_right = y
 
         return piece, shadow
+    
+    def swap_front_back(self, duration=0.6):
+        """
+        Anima a troca: quem estava na frente e grande vai para trás e menor,
+        e quem estava atrás passa para frente e maior.
+        """
+        if not (self.left_piece and self.right_piece and self.left_shadow and self.right_shadow):
+            return
+
+        FRONT = {
+            "pos": Vec3(-12, -5, 5),
+            "scale": 3.2,
+            "rot_y": 110,
+            "shadow_scale": (3.6, 3.6, 3.6)
+        }
+        BACK = {
+            "pos": Vec3(8, -1, 12),
+            "scale": 1.8,
+            "rot_y": -50,
+            "shadow_scale": (2.4, 2.4, 2.4)
+        }
+
+        if not self.is_flipped:
+            # estado atual: esquerda na frente, direita atrás
+            # alvo: esquerda vai para trás, direita vem para frente
+            piece_L_target = BACK
+            piece_R_target = FRONT
+        else:
+            # estado atual: esquerda atrás, direita na frente
+            # alvo: volta pro layout original
+            piece_L_target = FRONT
+            piece_R_target = BACK
+
+        # Anima LEFT
+        self.left_piece.animate_position(piece_L_target["pos"], duration=duration, curve=curve.in_out_quad)
+        self.left_piece.animate_scale(piece_L_target["scale"], duration=duration, curve=curve.in_out_quad)
+        self.left_piece.animate_rotation_y(piece_L_target["rot_y"], duration=duration, curve=curve.in_out_quad)
+        # Sombra LEFT
+        self.left_shadow.animate_position(piece_L_target["pos"] + Vec3(0, -0.78, 0), duration=duration, curve=curve.in_out_quad)
+        self.left_shadow.animate_scale(piece_L_target["shadow_scale"], duration=duration, curve=curve.in_out_quad)
+
+        # Anima RIGHT
+        self.right_piece.animate_position(piece_R_target["pos"], duration=duration, curve=curve.in_out_quad)
+        self.right_piece.animate_scale(piece_R_target["scale"], duration=duration, curve=curve.in_out_quad)
+        self.right_piece.animate_rotation_y(piece_R_target["rot_y"], duration=duration, curve=curve.in_out_quad)
+        # Sombra RIGHT
+        self.right_shadow.animate_position(piece_R_target["pos"] + Vec3(0, -0.78, 0), duration=duration, curve=curve.in_out_quad)
+        self.right_shadow.animate_scale(piece_R_target["shadow_scale"], duration=duration, curve=curve.in_out_quad)
+
+        # depois que a animação terminar, atualiza as bases do "flutuar"
+        def _apply_bases():
+            self._base_y_left  = piece_L_target["pos"].y
+            self._base_y_right = piece_R_target["pos"].y
+            self.is_flipped = not self.is_flipped # <-- ESSA INVERSÃO É FUNDAMENTAL
+
+        invoke(_apply_bases, delay=duration)
 
     def set_duel_from_quiz(self, quiz: dict):
         if not quiz:
@@ -240,14 +305,23 @@ class DuelScene(Entity):
             color_piece=neon(defender_color),
         )
 
+        self.is_flipped = False
+
         self.current_side = current_side
         self._entry_t = 0.0
         self._do_entry_anim = True
 
         self.ui_player.text = f"Vez das {'Brancas' if current_side == 'white' else 'Pretas'}"
 
+        # reseta o pivot + câmera para a posição base
+        camera_pivot.position = DUEL_CENTER
+        camera_pivot.rotation_y = 0     # começa sempre na visão do "lado base"
+
         camera.position = BASE_CAMERA_POS
         camera.look_at(BASE_CAMERA_LOOK)
+
+        # força a câmera já ficar alinhada com o side atual, mas via pivot
+        self.current_side = None        # garante que vai detectar mudança
         self.focus_on_side(current_side)
 
         self.enabled = True
@@ -255,20 +329,32 @@ class DuelScene(Entity):
     def focus_on_side(self, side: str):
         if side not in ("white", "black"):
             return
+
+        # se não mudou, não precisa animar
+        if side == self.current_side:
+            return
+
         self.current_side = side
+        self.ui_player.text = f"Vez das {'Brancas' if side == 'white' else 'Pretas'}"
 
+        # white = ângulo 0°, black = 180° (meia volta)
         if side == "white":
-            target_pos = Vec3(-2, 10, -20)
-            target_look = Vec3(-2, -2, 8)
+            target_rot = 0
+            do_swap = self.is_flipped
         else:
-            target_pos = Vec3(2, 10, -20)
-            target_look = Vec3(2, -2, 10)
+            target_rot = 40
+            do_swap = not self.is_flipped
 
-        camera.animate_position(target_pos, duration=0.6, curve=curve.in_out_quad)
 
-        def _update_look():
-            camera.look_at(target_look)
-        invoke(_update_look, delay=0.6)
+        # gira o pivot, a câmera “dá a volta” mantendo o duelo no centro
+        camera_pivot.animate_rotation_y(
+            target_rot,
+            duration=0.7,
+            curve=curve.in_out_quad
+        )
+
+        if do_swap:
+            self.swap_front_back()
 
     def step(self, dt: float):
         if not self.enabled:
@@ -696,13 +782,25 @@ window.fullscreen = False
 scene.fog_color = color.black
 scene.fog_density = 0.04
 
-camera.position = BASE_CAMERA_POS
+camera_pivot = Entity(
+    name='camera_pivot',
+    position=DUEL_CENTER   # centro da órbita: meio entre as peças
+)
+
+# câmera fica como "filha" do pivot
+camera.parent = camera_pivot
+
+camera.position = BASE_CAMERA_POS     # posição relativa ao pivot
 camera.look_at(BASE_CAMERA_LOOK)
 camera.fov = 60
 
-duel_scene = DuelScene()
+scene_pivot = Entity()
+duel_scene = DuelScene(parent=scene_pivot)
+duel_scene.scene_root = scene_pivot
 quiz_ui = QuizUI()
 quiz_ui.enabled = False
+
+_grid_entity = _make_neon_grid()
 
 _last_battle_id = None
 _last_phase = None
