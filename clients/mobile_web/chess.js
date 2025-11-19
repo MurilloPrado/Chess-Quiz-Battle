@@ -233,6 +233,36 @@ function inBounds(x, y) {
   return x >= 0 && x < COLS && y >= 0 && y < ROWS;
 }
 
+function colorForwardDir(color) {
+  // 1) tente pelos peões (melhor indicador)
+  let sumY = 0, cnt = 0;
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const c = board[idx(x, y)];
+      if (c && c[0] === color && (c[1] === 'P' || c[1] === 'p')) {
+        sumY += y; cnt++;
+      }
+    }
+  }
+  if (cnt > 0) {
+    const avg = sumY / cnt;
+    return (avg > (ROWS - 1) / 2) ? -1 : +1; // peões majoritariamente "embaixo" => -1
+  }
+
+  // 2) sem peões: tente pelo rei
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const c = board[idx(x, y)];
+      if (c && c[0] === color && (c[1] === 'K' || c[1] === 'k')) {
+        return (y > (ROWS - 1) / 2) ? -1 : +1;
+      }
+    }
+  }
+
+  // 3) fallback: supor configuração clássica (brancas embaixo)
+  return (color === 'w') ? -1 : +1;
+}
+
 function computePreviewMoves(x, y) {
   const moves = [];
   const code = board[idx(x, y)];
@@ -242,7 +272,7 @@ function computePreviewMoves(x, y) {
   if (!color || !type) {
     return moves; // se não entendeu a peça, não tenta gerar movimentos
   }
-  const dir   = (color === 'w') ? -1 : 1; // peão branco sobe (y-1), preto desce (y+1)
+   const dir = colorForwardDir(color);
 
   const isEnemy = (tx, ty) => {
     if (!inBounds(tx, ty)) return false;
@@ -262,13 +292,6 @@ function computePreviewMoves(x, y) {
     // uma casa à frente
     if (isEmpty(x, ny)) {
       moves.push([x, ny]);
-
-      // avanço duplo inicial (aproximação – pode não existir na sua variante)
-      const startRank = (color === 'w') ? (ROWS - 2) : 1;
-      const ny2 = y + dir * 2;
-      if (y === startRank && isEmpty(x, ny2)) {
-        moves.push([x, ny2]);
-      }
     }
 
     // capturas diagonais
