@@ -16,9 +16,10 @@ let ws = null;
 let currentQuiz = null; // CHANGED: vamos usar isso para saber quem venceu/perdeu no final
 let gamePhase = null;
 
-let timerMax = 15;
-let timerLeft = 15;
+let timerMax = 20;
+let timerLeft = 20;
 let timerInterval = null;
+let lastTurnKey = null;
 
 // minha cor: "white"/"black"
 let myColor = null;
@@ -43,17 +44,26 @@ function normalizeColorParam(raw) {
 // =====================
 function startTimer() {
   stopTimer();
+
+  const startedAt = performance.now();
+  timerLeft = Math.max(0, baseRemaining);
   updateTimerUI();
 
   timerInterval = setInterval(() => {
-    timerLeft -= 1;
-    if (timerLeft <= 0) {
-      timerLeft = 0;
-      stopTimer();
-    }
+    const now = performance.now();
+    const elapsed = (now - startedAt) / 1000;
+    const remaining = Math.max(0, baseRemaining - elapsed); // CHANGED
+
+    timerLeft = remaining;
     updateTimerUI();
-  }, 1000);
+
+    if (remaining <= 0) {
+      stopTimer();
+      disableOptions();
+    }
+  }, 100);
 }
+
 
 function stopTimer() {
   if (timerInterval) {
@@ -103,12 +113,31 @@ function applyQuizToUI(q) {
     }
   });
 
-  timerMax = q.timer || 15;
-  timerLeft = timerMax;
-  startTimer();
+  const side = q.currentSide;
+  const pool = q.timePool || {};
+  const bankForSide =
+    typeof pool[side] === "number" ? pool[side] : (q.maxTime || 20);
+
+  const rem = (typeof q.remainingTime === "number") ? q.remainingTime : bankForSide;
+
+  const tsa = q.turnStartedAt || 0;              // NEW (do backend)
+  const turnKey = `${side}|${tsa}`;              // NEW
+  timerMax = bankForSide;
+
+  if (turnKey !== lastTurnKey) {                 // só quando de fato troca o turno
+    lastTurnKey = turnKey;
+    startTimer(rem);                             // NEW: usa o remaining do backend
+  } else {
+    // só sinc fino: atualiza UI se drift > ~300ms
+    const drift = Math.abs(timerLeft - rem);
+    if (drift > 0.3) {
+      // não reinicia o intervalo; apenas corrige visualização
+      timerLeft = rem;
+      updateTimerUI();
+    }
+  }
 
   // quem responde?
-  const side = q.currentSide || "white"; // "white"/"black"
   const itsMyTurn = myColor && myColor === side;
 
   if (itsMyTurn) {
@@ -141,6 +170,8 @@ function disableOptions() {
 optionButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
     if (!currentQuiz || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+    if (timerLeft <= 0) return;
 
     const idx = parseInt(btn.dataset.index, 10);
     if (Number.isNaN(idx)) return;

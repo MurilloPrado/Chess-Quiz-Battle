@@ -3,6 +3,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Request
 from fastapi.responses import JSONResponse
 from .ws_manager import ConnectionManager
 from .models import StateMsg, JoinMsg, MoveMsg, QuizAnswerMsg
+import time 
 
 router = APIRouter()
 
@@ -24,42 +25,52 @@ def get_ctx_ws(websocket: WebSocket) -> dict:
 
 # ----------------------------------------------------------------------
 
+def _build_state_payload(mgr: ConnectionManager, ctx: dict) -> dict:
+    quiz = ctx.get("quiz")
+    quiz_out = None
+    if quiz:
+        quiz_out = dict(quiz)  # cópia rasa (preserva attacker/defender/choices/etc)
+        side = quiz_out.get("currentSide", "white")
+        pool = quiz_out.get("timePool") or {}
+        started = quiz_out.get("turnStartedAt")
+        # se temos banco+start, calcula remaining do turno; senão mantém compat
+        if isinstance(pool, dict) and side in pool and started:
+            bank = float(pool.get(side, 0.0))
+            elapsed = max(0.0, time.time() - float(started))
+            remaining = max(0.0, bank - elapsed)
+            quiz_out["maxTime"] = bank
+            quiz_out["remainingTime"] = remaining
+        else:
+            mx = float(quiz_out.get("maxTime", quiz_out.get("timer", 15)))
+            rem = float(quiz_out.get("remainingTime", mx))
+            quiz_out["maxTime"] = mx
+            quiz_out["remainingTime"] = max(0.0, min(rem, mx))
+
+    return StateMsg(
+        phase=ctx["phase"],
+        board=ctx.get("board"),
+        turn=ctx.get("turn"),
+        quiz=quiz_out,
+        players=mgr.list_players(),
+    ).model_dump()
+
 @router.get("/health")
 async def health():
     return {"status": "ok"}
 
 @router.get("/state")
-async def state_snapshot(
-    mgr: ConnectionManager = Depends(get_manager_http),
-    ctx: dict = Depends(get_ctx_http),
-):
-    payload = StateMsg(
-        phase=ctx["phase"],
-        board=ctx.get("board"),
-        turn=ctx.get("turn"),
-        quiz=ctx.get("quiz"),
-        players=mgr.list_players(),   # <-- bater com ws_manager.py
-    )
-    return JSONResponse(payload.model_dump())
+async def state_snapshot(mgr: ConnectionManager = Depends(get_manager_http), ctx: dict = Depends(get_ctx_http)):
+    return JSONResponse(_build_state_payload(mgr, ctx))
 
 @router.websocket("/ws")
-async def ws_endpoint(
-    ws: WebSocket,
-    mgr: ConnectionManager = Depends(get_manager_ws),
-    ctx: dict = Depends(get_ctx_ws),
-):
+async def ws_endpoint(ws: WebSocket,
+                      mgr: ConnectionManager = Depends(get_manager_ws),
+                      ctx: dict = Depends(get_ctx_ws)):
     import json, uuid
     cid = str(uuid.uuid4())
     await mgr.connect(ws, cid)
 
-    # snapshot inicial para o cliente recém-conectado
-    await mgr.send_personal(cid, StateMsg(   # <-- bater com ws_manager.py
-        phase=ctx["phase"],
-        board=ctx.get("board"),
-        turn=ctx.get("turn"),
-        quiz=ctx.get("quiz"),
-        players=mgr.list_players(),          # <-- bater com ws_manager.py
-    ).model_dump())
+    await mgr.send_personal(cid, _build_state_payload(mgr, ctx))
 
     try:
         while True:
@@ -69,44 +80,18 @@ async def ws_endpoint(
             if kind == "join":
                 msg = JoinMsg.model_validate(data)
                 mgr.set_meta(cid, {"name": msg.name, "avatar": msg.avatar})
-                await mgr.broadcast(StateMsg(
-                    phase=ctx["phase"],
-                    board=ctx.get("board"),
-                    turn=ctx.get("turn"),
-                    quiz=ctx.get("quiz"),
-                    players=mgr.list_players(),
-                ).model_dump())
+                await mgr.broadcast(_build_state_payload(mgr, ctx))
 
             elif kind == "move":
                 msg = MoveMsg.model_validate(data)
                 ok, capture = await ctx["on_move"](msg.from_, msg.to)
-                await mgr.broadcast(StateMsg(
-                    phase=ctx["phase"],
-                    board=ctx.get("board"),
-                    turn=ctx.get("turn"),
-                    quiz=ctx.get("quiz"),
-                    players=mgr.list_players(),
-                ).model_dump())
+                await mgr.broadcast(_build_state_payload(mgr, ctx))
 
             elif kind == "quiz_answer":
                 msg = QuizAnswerMsg.model_validate(data)
                 await ctx["on_quiz_answer"](cid, msg.answer)
-
-                # Sempre manda o snapshot atualizado, independente de ter acabado ou não
-                await mgr.broadcast(StateMsg(
-                    phase=ctx["phase"],
-                    board=ctx.get("board"),
-                    turn=ctx.get("turn"),
-                    quiz=ctx.get("quiz"),
-                    players=mgr.list_players(),
-                ).model_dump())
+                await mgr.broadcast(_build_state_payload(mgr, ctx))
 
     except WebSocketDisconnect:
         mgr.remove(cid)
-        await mgr.broadcast(StateMsg(
-            phase=ctx["phase"],
-            board=ctx.get("board"),
-            turn=ctx.get("turn"),
-            quiz=ctx.get("quiz"),
-            players=mgr.list_players(),
-        ).model_dump())
+        await mgr.broadcast(_build_state_payload(mgr, ctx))

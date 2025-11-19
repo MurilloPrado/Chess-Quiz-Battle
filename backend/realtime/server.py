@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from .ws_manager import ConnectionManager
-from .router import router
+from .router import router, _build_state_payload
 
 def get_local_ip() -> str:
     # tenta via socket “externo”
@@ -34,8 +34,23 @@ def create_app(static_dir: str, game_ctx: dict) -> FastAPI:
     app.state.conn_manager = ConnectionManager()
     app.state.game_ctx = game_ctx
 
+    @app.on_event("startup")
+    async def _start_quiz_broadcaster():
+        async def _loop():
+            while True:
+                await asyncio.sleep(0.33)  # ~3x/seg
+                mgr: ConnectionManager = app.state.conn_manager
+                ctx: dict = app.state.game_ctx
+                if not mgr.client_count(): continue
+                if ctx.get("phase") != "quiz": continue
+                if not ctx.get("quiz"): continue
+                try:
+                    await mgr.broadcast(_build_state_payload(mgr, ctx))
+                except Exception:
+                    pass
+        asyncio.create_task(_loop())
+
     app.mount("/web", StaticFiles(directory=static_dir, html=True), name="web")
-    
     app.include_router(router)
     return app
 

@@ -13,12 +13,13 @@ from ursina.shaders import unlit_shader
 
 # ================= CONFIG =================
 
-WS_URL = "ws://192.168.100.49:8765/ws"   # <-- AJUSTE AQUI
+WS_URL = "ws://192.168.100.36:8765/ws"   # <-- AJUSTE AQUI
 VIEWER_NAME = "Hologram Viewer"
 DEBUG_LOCAL = False
 
 latest_state = None
 latest_state_lock = threading.Lock()
+QUIZ_TOTAL_TIME = 20.0
 
 FAKE_QUIZ = {
     "battleId": 1,
@@ -59,6 +60,20 @@ def set_latest_state(data: dict):
 def get_latest_state():
     with latest_state_lock:
         return latest_state
+    
+def _calc_turn_remaining(quiz: dict) -> tuple[float, float]:
+    side = quiz.get("currentSide", "white")
+    pool = quiz.get("timePool") or {}
+    started = quiz.get("turnStartedAt")
+    if isinstance(pool, dict) and side in pool and started:
+        bank = float(pool.get(side, 0.0))
+        elapsed = max(0.0, time.time() - float(started))
+        remaining = max(0.0, bank - elapsed)
+        return remaining, bank
+    # fallback compat
+    rem = float(quiz.get("remainingTime", 15))
+    mx  = float(quiz.get("maxTime", 15))
+    return max(0.0, min(rem, mx)), mx
     
 def _make_neon_grid():
     grid_color = color.hex("#27943b")
@@ -715,21 +730,26 @@ class QuizUI(Entity):
         self.arc_mesh.generate()
 
 
-    def update_timer(self, remaining: float, max_time: float):
-        if max_time <= 0:
-            frac = 0.0
-        else:
-            t = max(0.0, min(remaining, max_time))
-            frac = t / max_time
+    def update_timer(self, remaining: float, bank_for_side: float, total_cap: float = QUIZ_TOTAL_TIME):
+        # no início do turno: remaining == bank_for_side
+        # durante o turno: remaining vai caindo; ambos sempre medidos contra total_cap (20s)
+        total = max(0.001, float(total_cap))
+        remaining = max(0.0, float(remaining))
+        bank_for_side = max(0.0, float(bank_for_side))
 
-        # número
+        # fração "visível" do que AINDA resta no duelo deste jogador (escala 0..1 sobre 20s)
+        frac_remaining = max(0.0, min(1.0, remaining / total))
+        # opcional: trilho mostrando o "banco" do jogador logo ao começar o turno (ex: 14/20)
+        frac_bank = max(0.0, min(1.0, bank_for_side / total))
+
+        # número no centro
         self.timer_text.text = str(int(math.ceil(remaining)))
 
-        # barra diminuindo
-        self.timer_bar.scale_x = 0.80 * frac
+        # barra inferior proporcional ao TOTAL
+        self.timer_bar.scale_x = 0.80 * frac_remaining
 
-        # círculo “esvaziando”
-        self._update_arc(frac)
+        # pizza preenchida do que resta AGORA
+        self._update_arc(frac_remaining)
 
     # -----------------------------
     # Clique na alternativa (feedback local)
@@ -902,10 +922,8 @@ def update():
     # atualiza UI
     quiz_ui.enabled = True
     quiz_ui.update_layout(current_side, question, alts)
-    quiz_ui.update_timer(
-        quiz.get("remainingTime", 15),
-        quiz.get("maxTime", 15)
-    )
+    rem, mx = _calc_turn_remaining(quiz)
+    quiz_ui.update_timer(rem, mx, QUIZ_TOTAL_TIME)
 
     # === PEÇAS 3D (aqui é onde a mágica acontece no debug!) ===
     battle_id = quiz.get("battleId")

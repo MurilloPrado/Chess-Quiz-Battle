@@ -4,6 +4,7 @@ import json
 import random
 import subprocess
 import sys
+import time
 from pathlib import Path
 from app.gui.scene_manager import Scene, SceneResult
 from app.gui.widgets.console import ConsoleWidget
@@ -22,6 +23,24 @@ except Exception:
 
 NEON = (20, 230, 60)
 BG_BORDER = 3
+
+QUIZ_TOTAL_TIME = 20.0          # tempo total por jogador em um duelo
+QUIZ_PENALTY_RATIO = 0.6        # 5s pensando → ~3s de penalidade (5 * 0.6)
+QUIZ_MIN_PENALTY = 1.0          # nunca perde menos que 1s
+QUIZ_MAX_PENALTY = 10.0         # só pra não exagerar se ficar muito tempo
+
+def _compute_time_penalty(elapsed: float) -> float:
+    """
+    Converte o tempo que o jogador ficou pensando (elapsed)
+    em penalidade que será descontada do banco dele.
+
+    Exemplo: elapsed=5s → penalty ≈ 3s (5 * 0.6).
+    """
+    raw = elapsed * QUIZ_PENALTY_RATIO
+    penalty = round(raw)
+    penalty = max(QUIZ_MIN_PENALTY, penalty)
+    penalty = min(QUIZ_MAX_PENALTY, penalty)
+    return penalty
 
 def _load_quiz_data():
     # sobe 3 níveis e entra na pasta 'quiz'
@@ -170,6 +189,14 @@ class GameScene(Scene):
         # CHANGED: Muda a fase pro front saber que agora é tela de quiz
         self.game_ctx["phase"] = "quiz"
 
+        # Banco de tempo por jogador (new!)
+        time_pool = {
+            "white": QUIZ_TOTAL_TIME,
+            "black": QUIZ_TOTAL_TIME,
+        }
+
+        now = time.time()
+
         # Estrutura que o front (web / 3D) vai usar para montar a tela
         self.game_ctx["quiz"] = {
             "battleId": random.randint(1, 10_000_000),   # só pra diferenciar batalhas
@@ -190,7 +217,12 @@ class GameScene(Scene):
             "question": q["pergunta"],
             "choices": q["alternativas"],
             "correctIndex": q["correta"],
-            "timer": 15,                                 # em segundos (UI controla)
+            "timePool": time_pool,      # banco de tempo dos dois jogadores
+            "turnStartedAt": now,       # quando essa vez começou (para medir elapsed deste turno)
+
+            # campos auxiliares pro front (opcional, se quiser mostrar algo direto)
+            "maxTime": time_pool[current_side],   # tempo atual disponível pra quem está jogando
+            "remainingTime": time_pool[current_side],  # front pode usar como seed para countdown local
         }
 
         # log no console
@@ -200,20 +232,26 @@ class GameScene(Scene):
         self._launch_ursina_viewer()
 
     def _next_quiz_round(self, next_side: str):
-        """
-        Continua o bate-bola do quiz, trocando jogador e sorteando nova pergunta.
-        Mantém a mesma batalha (mesmas peças duelando).
-        """
-        if not self.game_ctx.get("quiz"):
+        quiz = self.game_ctx.get("quiz")
+        if not quiz:
             return
 
         q = self._pick_random_question()
         self.game_ctx["phase"] = "quiz"
-        self.game_ctx["quiz"]["currentSide"] = next_side
-        self.game_ctx["quiz"]["question"] = q["pergunta"]
-        self.game_ctx["quiz"]["choices"] = q["alternativas"]
-        self.game_ctx["quiz"]["correctIndex"] = q["correta"]
-        self.game_ctx["quiz"]["timer"] = 15
+
+        # ⬇️ GRAVA TUDO NA RAIZ DO OBJETO quiz (sem quiz["quiz"])
+        quiz["currentSide"]  = next_side
+        quiz["question"]     = q["pergunta"]
+        quiz["choices"]      = q["alternativas"]
+        quiz["correctIndex"] = q["correta"]
+
+        now = time.time()
+        quiz["turnStartedAt"] = now
+
+        pool = quiz.get("timePool") or {}
+        current_bank = float(pool.get(next_side, QUIZ_TOTAL_TIME))
+        quiz["maxTime"]       = current_bank
+        quiz["remainingTime"] = current_bank
 
         nome = "Brancas" if next_side == "white" else "Pretas"
         self.console.push(f"Quiz continua! Agora é a vez das {nome}.")
@@ -255,42 +293,104 @@ class GameScene(Scene):
         if not quiz:
             return False
 
+        current_side = quiz.get("currentSide")  # "white" ou "black"
+        if current_side not in ("white", "black"):
+            return False
+
+        # Garante estrutura do timePool
+        time_pool = quiz.get("timePool")
+        if not isinstance(time_pool, dict):
+            time_pool = {
+                "white": QUIZ_TOTAL_TIME,
+                "black": QUIZ_TOTAL_TIME,
+            }
+            quiz["timePool"] = time_pool
+
+        # Tempo que o jogador ainda tinha antes dessa pergunta
+        bank_before = float(time_pool.get(current_side, QUIZ_TOTAL_TIME))
+
+        # Calcula quanto tempo ele demorou nessa vez
+        now = time.time()
+        turn_started_at = quiz.get("turnStartedAt") or now
+        elapsed = max(0.0, now - turn_started_at)
+
+        # 1) Checa se já deu timeout "hard" (demorou mais que o banco)
+        if elapsed >= bank_before:
+            loser_side = current_side
+            winner_side = "white" if loser_side == "black" else "black"
+
+            if hasattr(self.api, "resolve_battle"):
+                self.api.resolve_battle(winner_side)
+
+            self.console.push(
+                f"As {'Brancas' if loser_side=='white' else 'Pretas'} estouraram o tempo!"
+            )
+
+            self.game_ctx["phase"] = "chess"
+            self.game_ctx["quiz"] = None
+            self._sync_board_state()
+            self._update_turn_ctx(log_to_console=True)
+            return True  # duelo acabou
+
+        # 2) Calcula penalidade em cima do tempo que ele ficou pensando
+        penalty = _compute_time_penalty(elapsed)
+        new_bank = max(0.0, bank_before - penalty)
+        time_pool[current_side] = new_bank
+
+        self.console.push(
+            f"As {'Brancas' if current_side=='white' else 'Pretas'} "
+            f"pensaram {elapsed:.1f}s e perderam {penalty:.0f}s (restam {new_bank:.1f}s)."
+        )
+
+        # Se o banco zerou com a penalidade, ele perde o duelo
+        if new_bank <= 0.0:
+            loser_side = current_side
+            winner_side = "white" if loser_side == "black" else "black"
+
+            if hasattr(self.api, "resolve_battle"):
+                self.api.resolve_battle(winner_side)
+
+            self.console.push(
+                f"As {'Brancas' if loser_side=='white' else 'Pretas'} ficaram sem tempo!"
+            )
+
+            self.game_ctx["phase"] = "chess"
+            self.game_ctx["quiz"] = None
+            self._sync_board_state()
+            self._update_turn_ctx(log_to_console=True)
+            return True  # duelo acabou
+
+        # A partir daqui o jogador ainda tem tempo suficiente -> checa se errou/acertou
+
+        # Tenta converter a resposta para índice
         try:
             answer_idx = int(answer)
         except Exception:
-            # resposta inválida, ignora
-            return False
+            # resposta inválida: considera como erro direto (poderia ser só ignorar)
+            answer_idx = -1
 
         correct_idx = quiz.get("correctIndex", -1)
-        current_side = quiz.get("currentSide")  # "white" ou "black"
 
         if answer_idx == correct_idx:
-            # ACERTOU -> continua o bate-bola
-            # troca o lado da vez
+            # ACERTOU -> continua o bate-bola, alternando a vez
             next_side = "white" if current_side == "black" else "black"
-            self._next_quiz_round(next_side)
-            # False = quiz CONTINUA
-            return False
 
-        # ERROU -> fim da batalha
+            # prepara próxima rodada SEM resetar timePool
+            self._next_quiz_round(next_side)
+            return False  # quiz continua
+
+        # ERROU -> fim da batalha, exatamente como antes
         loser_side = current_side
         winner_side = "white" if loser_side == "black" else "black"
 
-        # resolve tabuleiro: só a peça do vencedor fica viva
         if hasattr(self.api, "resolve_battle"):
             self.api.resolve_battle(winner_side)
 
-        # volta para fase xadrez
         self.game_ctx["phase"] = "chess"
         self.game_ctx["quiz"] = None
         self._sync_board_state()
         self._update_turn_ctx(log_to_console=True)
-
-        msg = "Brancas" if winner_side == "white" else "Pretas"
-        self.console.push(f"Quiz encerrado. {msg} venceram a batalha!")
-
-        # True = quiz terminou
-        return True
+        return True  # duelo acabou
 
 
     def on_realtime_message(self, msg):
