@@ -374,11 +374,6 @@ class GameScene(Scene):
         new_bank = max(0.0, bank_before - penalty)
         time_pool[current_side] = new_bank
 
-        self.console.push(
-            f"As {'Brancas' if current_side=='white' else 'Pretas'} "
-            f"pensaram {elapsed:.1f}s e perderam {penalty:.0f}s (restam {new_bank:.1f}s)."
-        )
-
         # Se o banco zerou com a penalidade, ele perde o duelo
         if new_bank <= 0.0:
             loser_side = current_side
