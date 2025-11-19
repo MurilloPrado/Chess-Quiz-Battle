@@ -45,6 +45,14 @@ def create_app(static_dir: str, game_ctx: dict) -> FastAPI:
                 if ctx.get("phase") != "quiz": continue
                 if not ctx.get("quiz"): continue
                 try:
+                    checker = app.state.game_ctx.get("check_quiz_timeout")
+                    if callable(checker) and checker():
+                        # duelo acabou por tempo; manda um snapshot pós-resolução e continua
+                        await mgr.broadcast(_build_state_payload(mgr, ctx))
+                        continue
+                except Exception:
+                    pass
+                try:
                     await mgr.broadcast(_build_state_payload(mgr, ctx))
                 except Exception:
                     pass

@@ -135,6 +135,7 @@ class GameScene(Scene):
         self.game_ctx["on_move"] = self._on_move_async
         self.game_ctx["on_quiz_answer"] = self._on_quiz_answer_async
         self.game_ctx["turn"] = self.api.turn()
+        self.game_ctx["check_quiz_timeout"] = self._check_quiz_timeout
         self._sync_board_state()
         self._update_turn_ctx(log_to_console=False)
 
@@ -171,6 +172,42 @@ class GameScene(Scene):
             print("Viewer 3D iniciado (pid:", self.quiz3d_proc.pid, ")")
         except Exception as e:
             print("Falha ao iniciar viewer 3D:", e)
+
+
+    def _check_quiz_timeout(self) -> bool:
+        if self.game_ctx.get("phase") != "quiz":
+            return False
+
+        quiz = self.game_ctx.get("quiz") or {}
+        side = quiz.get("currentSide")
+        pool = quiz.get("timePool") or {}
+        started = quiz.get("turnStartedAt")
+
+        if side not in ("white", "black") or not started:
+            return False
+
+        bank = float(pool.get(side, 0.0))
+        elapsed = max(0.0, time.time() - float(started))
+
+        # Se o tempo real da vez já excedeu o banco restante => derrota por tempo
+        if elapsed >= bank:
+            loser = side
+            winner = "white" if loser == "black" else "black"
+
+            if hasattr(self.api, "resolve_battle"):
+                self.api.resolve_battle(winner)
+
+            self.console.push(
+                f"As {'Brancas' if loser=='white' else 'Pretas'} estouraram o tempo!"
+            )
+
+            self.game_ctx["phase"] = "chess"
+            self.game_ctx["quiz"] = None
+            self._sync_board_state()
+            self._update_turn_ctx(log_to_console=True)
+            return True
+
+        return False
 
     def _start_quiz(self):
         """
