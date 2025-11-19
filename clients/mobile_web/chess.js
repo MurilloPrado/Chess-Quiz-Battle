@@ -8,6 +8,7 @@ let COLS = 5, ROWS = 6;
 
 // estado de conexão / jogo
 let ws, myRole = 'spectator', myColor = null, turn = null;
+let myAssignedRole = null; 
 let board = new Array(COLS * ROWS).fill(null);
 let baseBottomColor = null;
 let gamePhase = "lobby";
@@ -45,6 +46,8 @@ const nameTop = document.getElementById('nameTop');
 const nameBottom = document.getElementById('nameBottom');
 const roleHint = document.getElementById('roleHint');
 const consoleEl = document.getElementById('console');
+const btnLeave  = document.getElementById('btnLeave');
+const btnResign = document.getElementById('btnResign');
 
 const idx = (x, y) => y * COLS + x;
 const log = (t) => {
@@ -107,6 +110,25 @@ function stopLobbyCountdown() {
   // Redesenha o tabuleiro sem overlay de "Começando em..."
   drawBoard();
 }
+
+if (activePlayers < 2) {
+  btnLeave.style.display  = '';
+  btnResign.style.display = 'none';
+} else if (gamePhase === 'chess') {
+  btnLeave.style.display  = 'none';
+  btnResign.style.display = (myColor ? '' : 'none');
+}
+
+btnLeave.addEventListener('click', () => {
+  try { ws?.close(); } catch {}
+  location.href = location.pathname.replace(/[^/]+$/, '') + 'index.html';
+});
+
+btnResign.addEventListener('click', () => {
+  if (!myColor) return;
+  if (!confirm('Tem certeza que deseja desistir?')) return;
+  ws?.send(JSON.stringify({ type: 'resign' }));
+});
 
 /* ========== Sprites ========== */
 
@@ -491,16 +513,19 @@ function updatePlayersState(playersArr) {
   const black = playersArr[1]?.name || null;
   
   // descobre meu papel/cor primeiro
-  if (playerName && white === playerName) {
-    myRole = 'player1';
-    myColor = 'w';
-  } else if (playerName && black === playerName) {
-    myRole = 'player2';
-    myColor = 'b';
-  } else {
-    myRole = 'spectator';
-    myColor = null;
-  }
+    if (myAssignedRole) {                    
+      myRole = myAssignedRole;
+      myColor = (myRole === 'player1') ? 'w' : (myRole === 'player2' ? 'b' : null);
+    } else {
+      // fallback antigo só se ainda não recebi "Assigned"
+      if (playerName && white === playerName) {
+        myRole = 'player1'; myColor = 'w';
+      } else if (playerName && black === playerName) {
+        myRole = 'player2'; myColor = 'b';
+      } else {
+        myRole = 'spectator'; myColor = null;
+      }
+    }
 
   // nomes na UI, respeitando minha perspectiva
   if (myColor === 'b') {
@@ -592,11 +617,17 @@ function setTurnFromMessage(msgTurn) {
   ws = new WebSocket(WS_URL);
   ws.addEventListener('open', () => {
     log(`<b>Conectado</b> ${WS_URL}`);
-    ws.send(JSON.stringify({ type: 'join', name: playerName }));
+    ws.send(JSON.stringify({ type: 'join', name: playerName, color: myColor === 'b' ? 'black' : (myColor === 'w' ? 'white' : null) }));
   });
   ws.addEventListener('close', () => log('<b>Desconectado</b>'));
   ws.addEventListener('error', () => log('<b>Erro de conexão</b>'));
   ws.addEventListener('message', onMessage);
+  
+  fetchStateSnapshot();
+  setTimeout(() => {
+    const anyPiece = Array.isArray(board) && board.some(c => !!c);
+    if (!anyPiece) fetchStateSnapshot();  // <- NEW
+  }, 600);
 
   // tamanho interno do canvas já casa com 6x5 tiles
   canvasBoard.width = COLS * TILE;
@@ -679,7 +710,7 @@ function onMessage(ev) {
   let msg; try { msg = JSON.parse(ev.data); } catch { return; }
 
   if (msg.type === 'Assigned') {
-    myRole = msg.role || 'spectator';
+    myAssignedRole = msg.role || 'spectator'; 
     myColor = (myRole === 'player1') ? 'w' : (myRole === 'player2' ? 'b' : null);
     setRoleUI();
   }

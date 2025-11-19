@@ -80,6 +80,7 @@ async def ws_endpoint(ws: WebSocket,
             if kind == "join":
                 msg = JoinMsg.model_validate(data)
                 mgr.set_meta(cid, {"name": msg.name, "avatar": msg.avatar})
+                await mgr.send_personal(cid, _build_state_payload(mgr, ctx))   # <- NEW
                 await mgr.broadcast(_build_state_payload(mgr, ctx))
 
             elif kind == "move":
@@ -90,6 +91,17 @@ async def ws_endpoint(ws: WebSocket,
             elif kind == "quiz_answer":
                 msg = QuizAnswerMsg.model_validate(data)
                 await ctx["on_quiz_answer"](cid, msg.answer)
+                await mgr.broadcast(_build_state_payload(mgr, ctx))
+
+            elif kind == "resign":
+                side = None
+                if hasattr(mgr, "slots"):
+                    if mgr.slots.get("white") == cid: side = "white"
+                    elif mgr.slots.get("black") == cid: side = "black"
+                if side:
+                    # finalize duelo/partida como preferir
+                    ctx["phase"] = "chess"
+                    ctx["quiz"] = None
                 await mgr.broadcast(_build_state_payload(mgr, ctx))
 
     except WebSocketDisconnect:
