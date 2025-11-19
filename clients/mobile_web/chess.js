@@ -13,6 +13,8 @@ let board = new Array(COLS * ROWS).fill(null);
 let baseBottomColor = null;
 let gamePhase = "lobby";
 
+const PIECE_IMG = {};
+
 function recomputeBaseBottomColor() {
   if (!Array.isArray(board) || board.length === 0) return;
   let w = 0, b = 0;
@@ -155,15 +157,30 @@ function loadPieceImages(basePath = PIECES_PATH) {
   return Promise.all(tasks);
 }
 
-function drawPiece(x, y, code) {
-  const img = pieceImgs[code];
-  //if (img && img.complete) {
-    // desenha a sprite
-    //bctx.drawImage(img, x * TILE, y * TILE, TILE, TILE);
- // } else {
-    // fallback: desenha só a letra (funcão que você já tinha)
-    drawGlyph(x, y, code);
-  //}
+function drawPieceSprite(ctx, code, px, py, tile) {
+  if (!(code in PIECE_IMG)) {
+    const img = new Image();
+    img.src = `chess-pieces/${code}.png`;   // ex.: chess-pieces/wK.png
+    img.onload = () => { PIECE_IMG[code] = img; drawBoard(); };
+    img.onerror = () => { PIECE_IMG[code] = null; };
+    PIECE_IMG[code] = img; // placeholder enquanto carrega
+  }
+
+  const img = PIECE_IMG[code];
+  if (!img || !img.complete || !img.naturalWidth) return false;
+
+  const pad = Math.round(tile * 0.10);
+  const w = tile - pad * 2;
+  const h = tile - pad * 2;
+
+  const ratio = img.width / img.height;
+  let dw = w, dh = h;
+  if (ratio > 1) dh = Math.round(w / ratio); else dw = Math.round(h * ratio);
+
+  const dx = px + Math.round((tile - dw) / 2);
+  const dy = py + Math.round((tile - dh) / 2);
+  ctx.drawImage(img, dx, dy, dw, dh);
+  return true;
 }
 
 /* ========== UI helpers ========== */
@@ -424,7 +441,17 @@ function drawBoard() {
 
       const code = board[idx(rx, ry)];
       if (!code) continue;
-      drawPiece(x, y, code);
+      const px = x * TILE;
+      const py = y * TILE;
+      const ok = drawPieceSprite(bctx, code, px, py, TILE);
+      if (!ok) {
+        // fallback enquanto a imagem não carregou
+        bctx.fillStyle = (code[0] === 'w') ? '#eee' : '#222';
+        bctx.font = Math.floor(TILE * 0.6) + 'px Arial';
+        bctx.textAlign = 'center';
+        bctx.textBaseline = 'middle';
+        bctx.fillText(code[1], px + TILE/2, py + TILE/2);
+      }
     }
   }
 
@@ -711,6 +738,7 @@ function onMessage(ev) {
 
   if (msg.type === 'Assigned') {
     myAssignedRole = msg.role || 'spectator'; 
+    myRole = myAssignedRole;
     myColor = (myRole === 'player1') ? 'w' : (myRole === 'player2' ? 'b' : null);
     setRoleUI();
   }
