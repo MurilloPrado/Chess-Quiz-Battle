@@ -6,14 +6,23 @@ import math
 import threading
 import time
 import sys
+import os
 from pathlib import Path
+
+BACKEND_ROOT = Path(__file__).resolve().parents[3]  # .../Chess-Quiz-Battle/backend
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.append(str(BACKEND_ROOT))
+    
+from realtime.server import get_local_ip
 
 from ursina import *
 from ursina.shaders import unlit_shader
 
 # ================= CONFIG =================
 
-WS_URL = "ws://192.168.100.36:8765/ws"   # <-- AJUSTE AQUI
+PORT = 8765
+
+WS_URL = os.getenv("QUIZ_WS_URL") or f"ws://{get_local_ip()}:{PORT}/ws"
 VIEWER_NAME = "Hologram Viewer"
 DEBUG_LOCAL = False
 
