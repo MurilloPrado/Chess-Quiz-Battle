@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Chess Quiz Battle</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link rel="stylesheet" href="quiz.css" />
+</head>
+<body>
+
+  <!-- Fundo com o grid neon -->
+  <canvas id="bgGrid"></canvas>
+
+  <!-- Conteúdo do quiz -->
+  <div class="quiz-root">
+    <!-- TIMER REDONDO -->
+    <div class="top-timer">
+      <div class="circle-timer">
+        <span id="circleTimerValue">10</span>
+      </div>
+    </div>
+
+    <!-- ALTERNATIVAS -->
+    <div class="quiz-center">
+      <div class="options-list" id="optionsList">
+        <button class="option-btn" data-index="0">
+          <span class="option-label">a.</span>
+          <span class="option-text">Alternativa A</span>
+        </button>
+        <button class="option-btn" data-index="1">
+          <span class="option-label">b.</span>
+          <span class="option-text">Alternativa B</span>
+        </button>
+        <button class="option-btn" data-index="2">
+          <span class="option-label">c.</span>
+          <span class="option-text">Alternativa C</span>
+        </button>
+        <button class="option-btn" data-index="3">
+          <span class="option-label">d.</span>
+          <span class="option-text">Alternativa D</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- TIMER EM LINHA RETA -->
+    <div class="bottom-timer">
+      <div class="bottom-timer-track">
+        <div class="bottom-timer-fill" id="bottomTimerFill"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OVERLAY (aguarde / ganhou / perdeu) -->
+  <div class="overlay hidden" id="quizOverlay">
+    <div class="overlay-box">
+      <div class="overlay-title" id="overlayTitle">Aguarde sua vez</div>
+      <div class="overlay-sub" id="overlaySub">Outro jogador está respondendo...</div>
+    </div>
+  </div>
+
+  <!-- Grid de fundo -->
+  <script src="grid.js"></script>
+
+  <!-- Lógica do quiz -->
+  <script src="quiz.js"></script>
+</body>
+</html>

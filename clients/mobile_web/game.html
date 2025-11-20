@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Jogo • Chess Quiz Battle</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <canvas id="bgGrid" aria-hidden="true"></canvas>
+
+  <div class="wrap">
+    <div class="names">
+      <div class="row">
+        <span class="badge black" title="Pretas"></span>
+        <span id="nameTop">Aguardando…</span>
+      </div>
+    </div>
+
+    <div class="board-frame">
+      <canvas id="board" width="576" height="480" aria-label="Tabuleiro"></canvas>
+    </div>
+
+    <div class="names">
+      <div class="row">
+        <span class="badge white" title="Brancas"></span>
+        <span id="nameBottom">Aguardando…</span>
+      </div>
+      <div class="role" id="roleHint">Papel: —</div>
+    </div>
+
+    <div class="actions">
+      <button id="btnLeave"  style="display:none">Sair</button>
+      <button id="btnResign" style="display:none">Desistir</button>
+    </div>
+
+    <div id="console" class="console" role="log" aria-live="polite"></div>
+  </div>
+
+  <div id="gameOverModal" class="modal">
+    <div class="modal__backdrop"></div>
+    <div class="modal__card">
+      <div id="gameOverTitle" class="gameover-title">Xeque-mate!</div>
+      <div class="gameover-winner">
+        <span class="fireworks"></span>
+        <span id="winnerName" class="gameover-name">Jogador</span>
+        <span class="fireworks"></span>
+      </div>
+      <p class="gameover-text">
+        Voltando ao menu em <span id="backCountdown">10</span>s...
+      </p>
+    </div>
+  </div>
+
+  <script type="module" src="grid.js"></script>
+  <script type="module" src="chess.js"></script>
+</body>
+</html>
