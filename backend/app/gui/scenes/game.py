@@ -13,6 +13,8 @@ from app.gui.widgets.matrix_rain import MatrixRain
 from app.gui.assets import font_consolas
 from app.gui.sprites import load_piece_surfaces
 from realtime.models import BoardState, StateMsg, MoveMsg
+from chess.core.rules import is_check, king_square
+from chess.utils.coordinates import fr
 
 # Se seu core expõe BOARD_W/BOARD_H via utils.constants, usamos nos cálculos.
 try:
@@ -323,67 +325,52 @@ class GameScene(Scene):
             cells=board_list, width=BOARD_W, height=BOARD_H
         )
 
+    # Arquivo: game.py - método _update_check_status(self)
+
     def _update_check_status(self):
+        # 1. ACESSO AO TABULEIRO E DEFINIÇÃO DE VARIÁVEIS BÁSICAS
         try:
-            # 1) pega o core real do tabuleiro (Board5x6)
-            core = getattr(self.api, "board", None) or self.api
+            # Acessa a lista de peças (o 'list' object) a partir do ChessAPI (self.api) -> Board5x6 (b)
+            board_list = self.api.b.board
+        except AttributeError:
+            # Se 'self.api' ou 'self.api.b' não existirem (inicialização falhou)
+            print("Erro: Instância do tabuleiro ChessAPI não acessível.")
+            return
 
-            # 2) descobre a cor da vez como INT (WHITE/BLACK)
-            raw_turn = None
+        current_turn = self.game_ctx["turn"]
+        color_int = WHITE if current_turn == "white" else BLACK
+        side_str = current_turn
 
-            # tenta usar o turno que já está no contexto (string 'white'/'black')
-            ctx_turn = self.game_ctx.get("turn")
-            if ctx_turn == "white":
-                color_int = WHITE
-                side_str = "white"
-            elif ctx_turn == "black":
-                color_int = BLACK
-                side_str = "black"
-            else:
-                # se não tiver no contexto, tenta tirar da API
-                t = getattr(core, "turn", None)
-                raw_turn = t() if callable(t) else t
+        # 2. VERIFICAÇÃO DE XEQUE
+        # Chama a função is_check (agora corretamente importada e passando a lista)
+        in_check = is_check(board_list, color_int)
 
-                if raw_turn in ("white", "w", WHITE):
-                    color_int = WHITE
-                    side_str = "white"
-                elif raw_turn in ("black", "b", BLACK):
-                    color_int = BLACK
-                    side_str = "black"
-                else:
-                    # não sei quem é a vez -> não marco check
-                    self.game_ctx["inCheckSide"] = None
-                    self.game_ctx["inCheckKing"] = None
-                    return
+        # 3. RESET DE ESTADO (Limpa o estado de xeque a cada chamada)
+        self.game_ctx["inCheckSide"] = None
+        self.game_ctx["inCheckKing"] = None
 
-            # 3) calcula check no core
-            in_check = core.is_check(color_int)
-            ksq = self._king_square_from_any(core, color_int)
+        # 4. ATUALIZAÇÃO DO ESTADO APENAS SE HOUVER XEQUE
+        if in_check:
+            try:
+                # Encontra a casa do rei (king_square retorna o índice: 0 a N-1)
+                king_sq_idx = king_square(board_list, color_int)
 
-            king_x = king_y = None
-            if isinstance(ksq, int):
-                board_state = self.game_ctx.get("board")
-                if isinstance(board_state, BoardState):
-                    w = board_state.width
-                else:
-                    w = BOARD_W
-                king_x, king_y = (ksq % w), (ksq // w)
+                if king_sq_idx is not None:
+                    # Converte o índice (0..29) para coordenadas (col, row) que o frontend espera: (x, y)
+                    king_col, king_row = fr(king_sq_idx)
+                    
+                    # Preenche o contexto para que o frontend (chess.js) possa desenhar a cor vermelha
+                    self.game_ctx["inCheckSide"] = side_str
+                    # O frontend (chess.js) espera um dicionário {"x": x, "y": y}
+                    self.game_ctx["inCheckKing"] = {"x": king_col, "y": king_row}
 
-            elif isinstance(ksq, tuple) and len(ksq) == 2:
-                king_x, king_y = ksq
-
-            # 4) só preenche se realmente estiver em cheque
-            if in_check and king_x is not None and king_y is not None:
-                self.game_ctx["inCheckSide"] = side_str
-                self.game_ctx["inCheckKing"] = {"x": king_x, "y": king_y}
-            else:
+            except Exception as e:
+                # Captura qualquer erro ao encontrar/converter a casa do rei
+                print("Erro ao processar a casa do rei em xeque:", e)
+                # Garante que o estado não será inconsistente
                 self.game_ctx["inCheckSide"] = None
                 self.game_ctx["inCheckKing"] = None
-
-        except Exception as e:
-            print("Erro em _update_check_status:", e)
-            self.game_ctx["inCheckSide"] = None
-            self.game_ctx["inCheckKing"] = None
+                
 
     def _king_square_from_any(self, core_or_board, color: int):
         """

@@ -477,20 +477,20 @@ function drawBoard() {
       bctx.fillStyle = fill;
       bctx.fillRect(x * TILE, y * TILE, TILE, TILE);
 
-      if (inCheckSide && inCheckKing && inCheckKing.x === rx && inCheckKing.y === ry) {
-        const px = x * TILE;
-        const py = y * TILE;
-        bctx.fillStyle = fill;
-        bctx.fillRect(px, py, TILE, TILE);
+      if (inCheckKing && inCheckKing.x === rx && inCheckKing.y === ry) {
+        // Não redesenha 'fill', apenas aplica o destaque vermelho por cima
+        const px = x * TILE; // usa as coordenadas da tela (x, y) que já consideram a perspectiva
+         const py = y * TILE;
 
         bctx.save();
-        bctx.fillStyle = '#e53935';
+        bctx.fillStyle = '#e53935'; // Vermelho do material design
         bctx.globalAlpha = 0.55;
         bctx.fillRect(px, py, TILE, TILE);
         bctx.restore();
       }
 
       const code = board[idx(rx, ry)]
+
       if (!code) continue;
 
       const px = x * TILE;
