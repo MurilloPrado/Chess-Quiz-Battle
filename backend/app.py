@@ -3,6 +3,7 @@ from app.gui.scene_manager import SceneManager
 from app.gui.scenes.menu import MenuScene
 from app.gui.scenes.game import GameScene
 from app.gui.scenes.lobby import LobbyScene
+from app.gui.scenes.rules import RulesScene
 
 # importa tua API de xadrez
 from chess.render.adapter import ChessAPI  # adapte ao teu caminho real
@@ -23,6 +24,7 @@ def run():
             "menu": MenuScene(size),
             "lobby": LobbyScene((screen.get_width(), screen.get_height())),
             "game": GameScene(size, api),
+            "rules": RulesScene(size),
         },
         first="menu",
         ctx=ctx,

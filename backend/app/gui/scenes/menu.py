@@ -10,10 +10,10 @@ NEON          = (20, 230, 60)
 FG            = (220, 255, 220)
 TOP_RATIO     = 0.62   # quanto da altura fica para o topo (ex.: 0.60 ~ 60%)
 GRID_Y_OFFSET = -18    # ajuste fino do grid em pixels (negativo = sobe, positivo = desce)
-TITLE_GAP     = 48      # distância entre as 3 linhas do título
-MENU_GAP      = 28      # distância entre itens do menu
-BORDER_THICK  = 3       # espessura da moldura externa
-BRACKET_THICK = 4       # espessura dos colchetes do título
+TITLE_GAP     = 48     # distância entre as 3 linhas do título
+MENU_GAP      = 28     # distância entre itens do menu
+BORDER_THICK  = 3      # espessura da moldura externa
+BRACKET_THICK = 4      # espessura dos colchetes do título
 FRAME_MARGIN  = 18      # margem da moldura externa em relação à janela
 CONTAINER_MAX_W = 1100  # largura máxima do "container" central
 CONTAINER_PAD   = 40    # padding interno do container
@@ -68,14 +68,13 @@ def RIGHT_PANEL(w, h):
     pad = 16
     return pygame.Rect(lc.right + pad, c.y + pad, rw - 2*pad, c.h - 2*pad)
 
-
-
 def _read_utf8(p: Path) -> str:
     # tenta utf-8 e, se falhar, ignora bytes problemáticos
     try:
         return p.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return p.read_bytes().decode("utf-8", errors="ignore")
+    
 
 class MenuScene(Scene):
     def __init__(self, window_size: tuple[int,int]):
@@ -176,17 +175,12 @@ class MenuScene(Scene):
         self.font_small = font_consolas(22)
         self.neon = NEON
         self.fg = FG
-        self.items = ["Jogar", "Ranking", "Regras", "Configurações", "Sair"]
+        self.items = ["Jogar", "Ranking", "Regras", "Sair"]
         self.sel = 0
 
-        # 3D placeholder
-        self.board_img = None
-        tex_path = D3 / "board.png"
-        if tex_path.exists():
-            self.board_img = pygame.image.load(str(tex_path)).convert_alpha()
 
-
-    def leave(self): pass
+    def leave(self): 
+        pass
 
     def handle_event(self, ev):
         if ev.type == pygame.KEYDOWN:
@@ -197,6 +191,11 @@ class MenuScene(Scene):
             elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self.items[self.sel] == "Jogar":
                     return SceneResult(next_scene="lobby")
+                elif self.items[self.sel] == "Ranking":
+                    # placeholder (se ainda não existir cena de ranking)
+                    return None
+                elif self.items[self.sel] == "Regras":
+                    return SceneResult(next_scene="rules")
                 elif self.items[self.sel] == "Sair":
                     pygame.event.post(pygame.event.Event(pygame.QUIT))
         return None
@@ -211,77 +210,121 @@ class MenuScene(Scene):
         # fundo preto
         screen.fill((0, 0, 0))
 
-        # GRID: ainda usamos BOTTOM_HALF/TOP_RATIO só para posicionar o fundo
+        # GRID
         self._draw_vaporwave_grid(screen, self.time)
 
-        # Agora o conteúdo usa a TELA TODA via CONTAINER/LEFT_COL/RIGHT_PANEL
-        left  = LEFT_COL(w, h)
-        right = RIGHT_PANEL(w, h)
+        # container central (sem coluna direita)
+        container = CONTAINER(w, h)
+        left = container  # usamos o container inteiro como "área do menu"
 
-        # --- Título ---
-        t1 = self.font_big.render("Xadrez", True, NEON)
-        t2 = self.font_big.render("Nem Um Pouco", True, NEON)
-        t3 = self.font_big.render("Complexo", True, NEON)
+        # --- TÍTULO ---
+        t1 = self.font_big.render("Chess", True, NEON)
+        t2 = self.font_big.render("Quiz", True, NEON)
+        t3 = self.font_big.render("Battle", True, NEON)
 
-        def cx(surf):  # centraliza na coluna esquerda
+        def cx(surf):  # centraliza dentro do container
             return left.x + (left.w - surf.get_width()) // 2
 
         # Padding do bloco do título (mais respiro no topo)
-        TITLE_PAD_X      = 8
-        TITLE_PAD_TOP    = 24
-        TITLE_PAD_BOTTOM = 12
-        TITLE_TO_MENU_GAP = 28  # ajuste fino
+        TITLE_PAD_X       = 50
+        TITLE_PAD_TOP     = 24
+        TITLE_PAD_BOTTOM  = 2
+        TITLE_TO_MENU_GAP = 28  # distância entre título e menu
 
-        title_lines_h = t1.get_height() + t2.get_height() + t3.get_height() + 2*TITLE_GAP
+        title_lines_h = (
+            t1.get_height()
+            + t2.get_height()
+            + t3.get_height()
+            + 2 * TITLE_GAP
+        )
         title_block_h = TITLE_PAD_TOP + title_lines_h + TITLE_PAD_BOTTOM
 
-        # --- Medida CORRETA do menu ---
+        # --- Medida do menu (altura total) ---
         menu_line_h  = self.font_small.get_height()
-        menu_total_h = menu_line_h + (len(self.items) - 1) * MENU_GAP  # ✅ correto
+        menu_total_h = menu_line_h + (len(self.items) - 1) * MENU_GAP
 
         # Altura total do conteúdo (título + gap + menu)
         content_total_h = title_block_h + TITLE_TO_MENU_GAP + menu_total_h
 
-        # Topo centralizado VERTICALMENTE dentro da coluna esquerda
+        # Topo centralizado VERTICALMENTE dentro do container
         content_top = left.y + (left.h - content_total_h) // 2
 
         # --- Desenhar TÍTULO ---
         y0 = content_top + TITLE_PAD_TOP
         screen.blit(t1, (cx(t1), y0))
         screen.blit(t2, (cx(t2), y0 + TITLE_GAP))
-        screen.blit(t3, (cx(t3), y0 + 2*TITLE_GAP))
+        screen.blit(t3, (cx(t3), y0 + 2 * TITLE_GAP))
 
-        title_w = max(t1.get_width(), t2.get_width(), t3.get_width()) + 2*TITLE_PAD_X
+        title_w = max(t1.get_width(), t2.get_width(), t3.get_width()) + 2 * TITLE_PAD_X
         title_h = title_block_h
         title_x = left.x + (left.w - title_w) // 2
         title_y = content_top
         title_rect = pygame.Rect(title_x, title_y, title_w, title_h)
 
-        # Colchetes mais afastados do texto
+        # Colchetes laterais
         BRACKET_MARGIN_X = 26
         self.draw_side_brackets(screen, title_rect, NEON, BRACKET_THICK, 34)
 
-        # --- Desenhar MENU (passos de MENU_GAP; 1ª linha conta a altura da fonte) ---
+        # --- MENU ---
         menu_y = title_rect.bottom + TITLE_TO_MENU_GAP
-        menu_x = left.x + (left.w // 2) - 120
+
+        # Largura máxima dos textos
+        max_label_w = 0
+        for label in self.items:
+            w_label, _ = self.font_small.size(label)
+            if w_label > max_label_w:
+                max_label_w = w_label
+
+        arrow_w, arrow_h = self.font_small.size("›")
+        panel_padding_x = 24
+        panel_padding_y = 10
+
+        # largura do bloco (seta + espaço + texto)
+        menu_block_w = arrow_w + 8 + max_label_w
+
+        # X do bloco todo, CENTRALIZADO dentro do container
+        menu_block_x = left.x + (left.w - menu_block_w) // 2
+
+        # posições da seta e do texto dentro do bloco
+        arrow_x_base = menu_block_x
+        label_x_base = menu_block_x + arrow_w + 8
+
+        # --- Painel preto atrás das opções ---
+        panel_w = menu_block_w + panel_padding_x * 2
+        panel_h = menu_total_h + panel_padding_y * 2
+
+        panel_x = menu_block_x - panel_padding_x
+        panel_y = menu_y - panel_padding_y
+
+        menu_panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        menu_panel.fill((0, 0, 0, 180))  # preto semitransparente
+        screen.blit(menu_panel, (panel_x, panel_y))
+
+        # --- Desenhar itens sobre o painel ---
         for i, label in enumerate(self.items):
-            y = menu_y + i * MENU_GAP  # ✅ passo é só o GAP
+            y = menu_y + i * MENU_GAP
             surf = self.font_small.render(label, True, FG)
-            screen.blit(surf, (menu_x + 24, y))
+
+            # centralizado no bloco (usando label_x_base)
+            label_x = label_x_base
+            screen.blit(surf, (label_x, y))
+
+        # seta ao lado da opção selecionada
         arrow = self.font_small.render("›", True, NEON)
-        screen.blit(arrow, (menu_x, menu_y + self.sel * MENU_GAP))
-
-        # Painel direito (inalterado)
-        pygame.draw.rect(screen, NEON, right, 2)
-
+        arrow_y = menu_y + self.sel * MENU_GAP
+        screen.blit(arrow, (arrow_x_base, arrow_y))
 
         # 4) overlay CRT por cima de tudo
         self._ensure_crt_overlay(w, h)
         self._draw_crt_overlay(screen, self.time)
 
-
         # 5) moldura externa
-        frame = pygame.Rect(FRAME_MARGIN, FRAME_MARGIN, w - 2*FRAME_MARGIN, h - 2*FRAME_MARGIN)
+        frame = pygame.Rect(
+            FRAME_MARGIN,
+            FRAME_MARGIN,
+            w - 2 * FRAME_MARGIN,
+            h - 2 * FRAME_MARGIN,
+        )
         pygame.draw.rect(screen, NEON, frame, BORDER_THICK)
 
         self._ensure_crt_overlay(w, h)
