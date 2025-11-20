@@ -46,13 +46,18 @@ def _build_state_payload(mgr: ConnectionManager, ctx: dict) -> dict:
             quiz_out["maxTime"] = mx
             quiz_out["remainingTime"] = max(0.0, min(rem, mx))
 
-    return StateMsg(
+    payload = StateMsg(
         phase=ctx["phase"],
         board=ctx.get("board"),
         turn=ctx.get("turn"),
         quiz=quiz_out,
         players=mgr.list_players(),
     ).model_dump()
+    
+    payload["inCheckSide"] = ctx.get("inCheckSide")   # "white" | "black" | None
+    payload["inCheckKing"] = ctx.get("inCheckKing")   # {"x":int,"y":int} | None
+
+    return payload
 
 @router.get("/health")
 async def health():

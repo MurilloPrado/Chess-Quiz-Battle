@@ -1,5 +1,5 @@
 const params = new URLSearchParams(location.search);
-const playerName = params.get('name') || 'Jogador';
+let playerName = params.get('name') || ('Jogador-' + Math.random().toString(36).slice(2,6));
 const WS_URL = params.get('ws') || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
 
 // CHANGED: mantém TILE fixo em 96 (combina com CSS), mas responsivo vem da var --tile
@@ -9,24 +9,13 @@ let COLS = 5, ROWS = 6;
 // estado de conexão / jogo
 let ws, myRole = 'spectator', myColor = null, turn = null;
 let myAssignedRole = null; 
+let lastRoleShown  = null;
 let board = new Array(COLS * ROWS).fill(null);
 let baseBottomColor = null;
 let gamePhase = "lobby";
 
 const PIECE_IMG = {};
 
-function recomputeBaseBottomColor() {
-  if (!Array.isArray(board) || board.length === 0) return;
-  let w = 0, b = 0;
-  for (let x = 0; x < COLS; x++) {
-    const c = board[idx(x, ROWS - 1)];
-    if (!c) continue;
-    if (c[0] === 'w') w++;
-    else if (c[0] === 'b') b++;
-  }
-  if (w > b) baseBottomColor = 'w';
-  else if (b > w) baseBottomColor = 'b';
-}
 
 // CHANGED: estado de lobby / timer
 let started = false;        // só vira true depois do countdown
@@ -50,6 +39,12 @@ const roleHint = document.getElementById('roleHint');
 const consoleEl = document.getElementById('console');
 const btnLeave  = document.getElementById('btnLeave');
 const btnResign = document.getElementById('btnResign');
+let inCheckSide = null;            // "white" | "black" | null
+let inCheckKing = null; 
+let FLIP_Y = false;
+let lastBoardSig = null;   // assinatura do board do último snapshot desenhado
+let lastTurnKey  = null;   // 'white' | 'black'
+
 
 const idx = (x, y) => y * COLS + x;
 const log = (t) => {
@@ -132,6 +127,20 @@ btnResign.addEventListener('click', () => {
   ws?.send(JSON.stringify({ type: 'resign' }));
 });
 
+function boardSignature(cells) {
+  if (!Array.isArray(cells)) return 'none';
+  // assinatura leve: tamanho + alguns valores
+  const n = cells.length;
+  let a = 0, b = 0, c = 0;
+  for (let i = 0; i < n; i += Math.max(1, Math.floor(n/97))) {
+    const v = cells[i] ? cells[i].charCodeAt(0) + (cells[i].charCodeAt(1)||0) : 7;
+    a = (a * 131 + v) >>> 0;
+    b = (b * 97  + v) >>> 0;
+    c = (c * 53  + v) >>> 0;
+  }
+  return `${n}:${a.toString(16)}:${b.toString(16)}:${c.toString(16)}`;
+}
+
 /* ========== Sprites ========== */
 
 function loadPieceImages(basePath = PIECES_PATH) {
@@ -201,32 +210,36 @@ function canMove() {
 
 // coord. do board (bx,by) -> tela (sx,sy)
 function boardToScreen(bx, by) {
-  // se eu sou da mesma cor que está "embaixo" no board, não inverto
-  // se eu sou da cor oposta, espelho no eixo Y pra minhas peças ficarem embaixo
-  let sy;
-  if (!myColor || myColor === baseBottomColor) {
-    sy = by;
-  } else {
-    sy = ROWS - 1 - by;
-  }
+  // recebe coordenadas do TABULEIRO e devolve coordenadas de DESENHO
+  const sy = FLIP_Y ? (ROWS - 1) - by : by;
   return { x: bx, y: sy };
 }
-
 // coord. da tela (sx,sy) -> board (bx,by)
 function screenToBoard(sx, sy) {
-  let by;
-  if (!myColor || myColor === baseBottomColor) {
-    by = sy;
-  } else {
-    by = ROWS - 1 - sy;
-  }
+  // recebe coordenadas da TELA e devolve coordenadas do TABULEIRO
+  const by = FLIP_Y ? (ROWS - 1) - sy : sy;
   return { x: sx, y: by };
 }
 
+function recomputePerspective() {
+  if (!myColor || !Array.isArray(board) || !COLS || !ROWS) return;
+  // média de Y das minhas peças em coordenadas de TABULEIRO
+  let sumY = 0, count = 0;
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const code = board[y * COLS + x];
+      if (code && code[0] === myColor) { sumY += y; count++; }
+    }
+  }
+  if (!count) return;
+  const avgY = sumY / count;
+  // se a média está na metade de CIMA do tabuleiro lógico, flipamos para trazê-la para baixo
+  FLIP_Y = avgY <= (ROWS - 1) / 2;
+}
 
 // coord. lógica -> desenhada (perspectiva preto/branco)
-function renderXY(bx, by) {
-  return boardToScreen(bx, by);
+function renderXY(bx, by) { 
+  return boardToScreen(bx, by); 
 }
 
 function inBounds(x, y) {
@@ -440,7 +453,7 @@ function drawBoard() {
   // casas + peças
   for (let ry = 0; ry < ROWS; ry++) {
     for (let rx = 0; rx < COLS; rx++) {
-      const { x, y } = renderXY(rx, ry);
+      const { x, y } = boardToScreen(rx, ry);
       const light = ((rx + ry) % 2 === 0);
 
       // base da casa
@@ -462,8 +475,22 @@ function drawBoard() {
       bctx.fillStyle = fill;
       bctx.fillRect(x * TILE, y * TILE, TILE, TILE);
 
-      const code = board[idx(rx, ry)];
+      if (inCheckSide && inCheckKing && inCheckKing.x === rx && inCheckKing.y === ry) {
+        const px = x * TILE;
+        const py = y * TILE;
+        bctx.fillStyle = fill;
+        bctx.fillRect(px, py, TILE, TILE);
+
+        bctx.save();
+        bctx.fillStyle = '#e53935';
+        bctx.globalAlpha = 0.55;
+        bctx.fillRect(px, py, TILE, TILE);
+        bctx.restore();
+      }
+
+      const code = board[idx(rx, ry)]
       if (!code) continue;
+
       const px = x * TILE;
       const py = y * TILE;
       const ok = drawPieceSprite(bctx, code, px, py, TILE);
@@ -564,7 +591,7 @@ function updatePlayersState(playersArr) {
   
   // descobre meu papel/cor primeiro
     if (myAssignedRole) {                    
-      myRole = myAssignedRole;
+      myRole  = myAssignedRole;
       myColor = (myRole === 'player1') ? 'w' : (myRole === 'player2' ? 'b' : null);
     } else {
       // fallback antigo só se ainda não recebi "Assigned"
@@ -595,29 +622,36 @@ function updatePlayersState(playersArr) {
   setRoleUI();
 
   // contabiliza jogadores ativos
-  activePlayers = 0;
-  if (white) activePlayers++;
-  if (black) activePlayers++;
+  activePlayers = Array.isArray(playersArr) ? playersArr.length : 0;
 
   // lógica do countdown (mantém o que você já tinha)
   if (activePlayers < 2) {
     started = false;
+    stopLobbyCountdown();
     if (countdownTimer) {
       clearInterval(countdownTimer);
       countdownTimer = null;
     }
     countdown = null;
   } else if (gamePhase === "lobby" && activePlayers >= 2 && !started) {
+  // Já tem countdown rodando? NÃO inicia de novo.
+  if (countdownTimer) {
+    // só redesenha UI se quiser
+    drawBoard();
+  } else {
     countdown = 10;
     log('<i>Ambos os jogadores conectados. Iniciando em 10...</i>');
+    drawBoard();
     countdownTimer = setInterval(() => {
       countdown--;
+      drawBoard();
       if (countdown <= 0) {
         clearInterval(countdownTimer);
         countdownTimer = null;
         countdown = null;
         started = true;
         log('<b>Jogo iniciado. Boa sorte!</b>');
+        drawBoard();
 
         // força snapshot no início
         fetch(`${location.origin}/state`)
@@ -628,13 +662,13 @@ function updatePlayersState(playersArr) {
             drawBoard();
           });
       } else {
+        // Mostra apenas o número (sem spammar várias linhas de log)
+        // Se quiser manter o log, mantém — mas agora só há 1 intervalo.
         log(`<i>Começando em ${countdown}...</i>`);
       }
     }, 1000);
   }
-
-  drawBoard();
-}
+}}
 
 function setTurnFromMessage(msgTurn) {
   let newTurn = null;
@@ -662,6 +696,7 @@ function setTurnFromMessage(msgTurn) {
   loadPieceImages().then(() => {
     console.log('Sprites carregadas (ou fallback).');
     drawBoard(); // redesenha já com sprites disponíveis
+    fetchStateSnapshot(); 
   });
 
   ws = new WebSocket(WS_URL);
@@ -702,10 +737,19 @@ function applyStateSnapshot(msg) {
     // significa que o jogo já começou (não é mais lobby)
     if (gamePhase === "chess") {
       started = true;        // impede o countdown de rodar de novo
-      // se você tiver algum overlay de countdown/lobby, esconda aqui:
       stopLobbyCountdown();  // vamos criar essa função abaixo
+
+      // limpa seleção
+      sel = null;
+      previewMoves = [];
+      recomputePerspective();
     }
   }
+
+  inCheckSide = msg.inCheckSide || null;
+  inCheckKing = (msg.inCheckKing && typeof msg.inCheckKing.x === 'number')
+    ? { x: msg.inCheckKing.x, y: msg.inCheckKing.y }
+    : null;
 
   if (msg.board) {
     const { cells, width, height } = msg.board;
@@ -718,8 +762,24 @@ function applyStateSnapshot(msg) {
       canvasBoard.width  = COLS * TILE;
       canvasBoard.height = ROWS * TILE;
     }
+    
+    const curSig  = boardSignature(cells);
+    const curTurn = msg.turn || turn || null;
 
-    recomputeBaseBottomColor();
+    // Limpa seleção/preview SOMENTE se houve mudança real de posição ou de turno
+    const boardChanged = (lastBoardSig !== null && curSig !== lastBoardSig);
+    const turnChanged  = (lastTurnKey !== null && curTurn && curTurn !== lastTurnKey);
+
+    // Se você tinha limpeza incondicional, troque por:
+    if (boardChanged || turnChanged) {
+      sel = null;
+      previewMoves = [];
+    }
+
+    lastBoardSig = curSig;
+    lastTurnKey  = curTurn;
+
+    recomputePerspective(); 
   }
 
   const phase = msg.phase || null;
@@ -760,10 +820,19 @@ function onMessage(ev) {
   let msg; try { msg = JSON.parse(ev.data); } catch { return; }
 
   if (msg.type === 'Assigned') {
-    myAssignedRole = msg.role || 'spectator'; 
-    myRole = myAssignedRole;
-    myColor = (myRole === 'player1') ? 'w' : (myRole === 'player2' ? 'b' : null);
-    setRoleUI();
+    const newRole = msg.role || 'spectator'; 
+    if (newRole !== myAssignedRole) {
+      myAssignedRole = newRole;
+      myRole  = newRole;
+      myColor = (myRole === 'player1') ? 'w' : (myRole === 'player2' ? 'b' : null);
+      recomputePerspective?.();
+      if (myRole !== lastRoleShown) {
+        setRoleUI();           // mostra boas-vindas uma vez
+        lastRoleShown = myRole;
+      }
+      drawBoard();
+    }
+    return; // não deixe cair em lógicas de players por nome
   }
 
   if (msg.type === 'state') {
@@ -774,11 +843,16 @@ function onMessage(ev) {
   if (msg.type === 'MoveMsg') {
     if (msg.board && Array.isArray(msg.board.cells)) {
       board = msg.board.cells.slice();
-      recomputeBaseBottomColor();
+      if (msg.board.width && msg.board.height) {
+        COLS = msg.board.width;
+        ROWS = msg.board.height;
+        canvasBoard.width  = COLS * TILE;
+        canvasBoard.height = ROWS * TILE;
+      }
     }
-    if (msg.turn) {
-      setTurnFromMessage(msg.turn);
-    }
+    if (msg.turn) setTurnFromMessage(msg.turn);
+    sel = null;           // CHANGED: tira seleção obsoleta
+    previewMoves = [];
     drawBoard();
   }
 

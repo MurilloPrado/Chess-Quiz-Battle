@@ -300,6 +300,29 @@ class GameScene(Scene):
             cells=board_list, width=BOARD_W, height=BOARD_H
         )
 
+    def _update_check_status(self):
+        try:
+            board_obj = self.board  # ajuste se seu objeto se chama diferente
+            side_to_move = board_obj.turn  # 1=WHITE, 2=BLACK (ou conforme seu constants)
+            # mapeie para string que o front entende
+            side_str = "white" if side_to_move == 1 else "black"
+
+            in_check = board_obj.is_check(side_to_move)
+            ksq = board_obj.king_square(side_to_move)  # índice 0..(W*H-1) ou (x,y) conforme sua API
+
+            king_x = king_y = None
+            if isinstance(ksq, int):
+                w = self.game_ctx["board"]["width"]
+                king_x, king_y = (ksq % w), (ksq // w)
+            elif isinstance(ksq, tuple) and len(ksq) == 2:
+                king_x, king_y = ksq
+
+            self.game_ctx["inCheckSide"] = side_str if in_check else None
+            self.game_ctx["inCheckKing"] = {"x": king_x, "y": king_y} if (king_x is not None) else None
+        except Exception:
+            # se algo falhar, limpa os campos
+            self.game_ctx["inCheckSide"] = None
+            self.game_ctx["inCheckKing"] = None
     
     async def _on_move_async(self, src_xy, dst_xy):
         ok = self.api.try_move(src_xy, dst_xy)
@@ -313,6 +336,7 @@ class GameScene(Scene):
         
         # atualiza estado local
         self._sync_board_state()
+        self._update_check_status()
         self._update_turn_ctx(log_to_console=True)
 
         return ok, getattr(self.api, "was_capture", False)
@@ -429,6 +453,7 @@ class GameScene(Scene):
         if isinstance(msg, StateMsg):
             if hasattr(self.api, "import_board_linear"):
                 self.api.import_board_linear(msg.board.cells)
+            self._update_check_status()
             if msg.turn:
                 self.game_ctx["turn"] = msg.turn
             self.console.push("Estado do tabuleiro sincronizado.")
