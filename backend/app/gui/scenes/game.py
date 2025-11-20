@@ -302,25 +302,64 @@ class GameScene(Scene):
 
     def _update_check_status(self):
         try:
-            board_obj = self.board  # ajuste se seu objeto se chama diferente
-            side_to_move = board_obj.turn  # 1=WHITE, 2=BLACK (ou conforme seu constants)
-            # mapeie para string que o front entende
-            side_str = "white" if side_to_move == 1 else "black"
+            # 1) pega o core real do tabuleiro (Board5x6)
+            core = getattr(self.api, "board", None) or self.api
 
-            in_check = board_obj.is_check(side_to_move)
-            ksq = board_obj.king_square(side_to_move)  # índice 0..(W*H-1) ou (x,y) conforme sua API
+            # 2) descobre a cor da vez como INT (WHITE/BLACK)
+            raw_turn = None
+
+            # tenta usar o turno que já está no contexto (string 'white'/'black')
+            ctx_turn = self.game_ctx.get("turn")
+            if ctx_turn == "white":
+                color_int = WHITE
+                side_str = "white"
+            elif ctx_turn == "black":
+                color_int = BLACK
+                side_str = "black"
+            else:
+                # se não tiver no contexto, tenta tirar da API
+                t = getattr(core, "turn", None)
+                raw_turn = t() if callable(t) else t
+
+                if raw_turn in ("white", "w", WHITE):
+                    color_int = WHITE
+                    side_str = "white"
+                elif raw_turn in ("black", "b", BLACK):
+                    color_int = BLACK
+                    side_str = "black"
+                else:
+                    # não sei quem é a vez -> não marco check
+                    self.game_ctx["inCheckSide"] = None
+                    self.game_ctx["inCheckKing"] = None
+                    return
+
+            # 3) calcula check no core
+            in_check = core.is_check(color_int)
+            ksq = core.king_square(color_int)
 
             king_x = king_y = None
+
             if isinstance(ksq, int):
-                w = self.game_ctx["board"]["width"]
+                board_state = self.game_ctx.get("board")
+                if isinstance(board_state, BoardState):
+                    w = board_state.width
+                else:
+                    w = BOARD_W
                 king_x, king_y = (ksq % w), (ksq // w)
+
             elif isinstance(ksq, tuple) and len(ksq) == 2:
                 king_x, king_y = ksq
 
-            self.game_ctx["inCheckSide"] = side_str if in_check else None
-            self.game_ctx["inCheckKing"] = {"x": king_x, "y": king_y} if (king_x is not None) else None
-        except Exception:
-            # se algo falhar, limpa os campos
+            # 4) só preenche se realmente estiver em cheque
+            if in_check and king_x is not None and king_y is not None:
+                self.game_ctx["inCheckSide"] = side_str
+                self.game_ctx["inCheckKing"] = {"x": king_x, "y": king_y}
+            else:
+                self.game_ctx["inCheckSide"] = None
+                self.game_ctx["inCheckKing"] = None
+
+        except Exception as e:
+            print("Erro em _update_check_status:", e)
             self.game_ctx["inCheckSide"] = None
             self.game_ctx["inCheckKing"] = None
     

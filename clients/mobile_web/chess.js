@@ -796,6 +796,10 @@ function applyStateSnapshot(msg) {
     params.set("color", colorStr);
   }
 
+  if (!params.get("name") && playerName) {
+    params.set("name", playerName);
+  }
+
   const search = params.toString() ? "?" + params.toString() : "";
   const basePath = window.location.pathname.replace(/[^/]+$/, "");
   const target = basePath + "quiz.html" + search;

@@ -46,12 +46,28 @@ def _build_state_payload(mgr: ConnectionManager, ctx: dict) -> dict:
             quiz_out["maxTime"] = mx
             quiz_out["remainingTime"] = max(0.0, min(rem, mx))
 
+    raw_players = mgr.list_players()
+    by_name = {p.get("name"): p for p in raw_players if p.get("name")}
+
+    seats = ctx.get("seats", {})
+    ordered_players = []
+
+    white_name = seats.get("white")
+    black_name = seats.get("black")
+
+    if white_name:
+        p = by_name.get(white_name, {"id": None, "name": white_name, "avatar": None})
+        ordered_players.append(p)
+    if black_name:
+        p = by_name.get(black_name, {"id": None, "name": black_name, "avatar": None})
+        ordered_players.append(p)
+
     payload = StateMsg(
         phase=ctx["phase"],
         board=ctx.get("board"),
         turn=ctx.get("turn"),
         quiz=quiz_out,
-        players=mgr.list_players(),
+        players=ordered_players,
     ).model_dump()
     
     payload["inCheckSide"] = ctx.get("inCheckSide")   # "white" | "black" | None
@@ -85,7 +101,22 @@ async def ws_endpoint(ws: WebSocket,
             if kind == "join":
                 msg = JoinMsg.model_validate(data)
                 mgr.set_meta(cid, {"name": msg.name, "avatar": msg.avatar})
-                await mgr.send_personal(cid, _build_state_payload(mgr, ctx))   # <- NEW
+
+                # --- NOVO: mapear nome -> seat white/black ---
+                seats = ctx.setdefault("seats", {"white": None, "black": None})
+
+                # ignora o viewer 3D como "jogador"
+                if msg.name != "Hologram Viewer":
+                    # se já tinha seat, mantém
+                    if msg.name != seats.get("white") and msg.name != seats.get("black"):
+                        # atribui primeira vaga livre
+                        if seats.get("white") is None:
+                            seats["white"] = msg.name
+                        elif seats.get("black") is None:
+                            seats["black"] = msg.name
+                # ---------------------------------------------
+
+                await mgr.send_personal(cid, _build_state_payload(mgr, ctx))
                 await mgr.broadcast(_build_state_payload(mgr, ctx))
 
             elif kind == "move":
