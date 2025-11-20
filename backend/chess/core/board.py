@@ -107,11 +107,28 @@ class Board5x6:
 
     # fim de jogo
     def outcome(self) -> Optional[str]:
+        white_king_sq = king_square(self.board, WHITE)
+        black_king_sq = king_square(self.board, BLACK)
+
+        if white_king_sq is None and black_king_sq is not None:
+            return "checkmate_black_wins"
+
+        # se só o rei preto sumiu => brancas venceram
+        if black_king_sq is None and white_king_sq is not None:
+            return "checkmate_white_wins"
+
+        # se os dois reis sumiram (bem improvável) trata como empate
+        if white_king_sq is None and black_king_sq is None:
+            return "stalemate"
+
+        # 2) lógica normal de checkmate / stalemate
         legalMoves = self.legal_moves()
         if legalMoves:
             return None
+
         if self.is_check(self.turn):
             return "checkmate_white_wins" if self.turn == BLACK else "checkmate_black_wins"
+
         return "stalemate"
     
 

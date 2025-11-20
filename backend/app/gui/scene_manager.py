@@ -27,9 +27,16 @@ class SceneManager:
         self.current.enter(self.ctx if payload is None else {**self.ctx, **(payload or {})})
 
     def tick(self, evts, dt, screen):
+        # 1) eventos podem pedir troca de cena
         for e in evts:
             res = self.current.handle_event(e)
             if isinstance(res, SceneResult) and res.next_scene:
                 self.switch(res.next_scene, res.payload)
-        self.current.update(dt)
+
+        # 2) update também pode pedir troca de cena (ex.: game_over após 10s)
+        res = self.current.update(dt)
+        if isinstance(res, SceneResult) and res.next_scene:
+            self.switch(res.next_scene, res.payload)
+
+        # 3) render da cena atual
         self.current.render(screen)

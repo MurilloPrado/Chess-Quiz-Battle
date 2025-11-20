@@ -72,6 +72,10 @@ def _build_state_payload(mgr: ConnectionManager, ctx: dict) -> dict:
     
     payload["inCheckSide"] = ctx.get("inCheckSide")   # "white" | "black" | None
     payload["inCheckKing"] = ctx.get("inCheckKing")   # {"x":int,"y":int} | None
+    payload["gameOver"] = bool(ctx.get("gameOver", False))
+    payload["winnerSide"] = ctx.get("winnerSide")
+    payload["winnerName"] = ctx.get("winnerName")
+    payload["outcome"] = ctx.get("outcome")
 
     return payload
 

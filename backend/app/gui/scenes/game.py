@@ -5,6 +5,7 @@ import random
 import subprocess
 import sys
 import time
+import math
 from pathlib import Path
 from app.gui.scene_manager import Scene, SceneResult
 from app.gui.widgets.console import ConsoleWidget
@@ -15,7 +16,7 @@ from realtime.models import BoardState, StateMsg, MoveMsg
 
 # Se seu core expõe BOARD_W/BOARD_H via utils.constants, usamos nos cálculos.
 try:
-    from chess.utils.constants import BOARD_W, BOARD_H, PIECE_SYMBOL, WHITE, BLACK
+    from chess.utils.constants import BOARD_W, BOARD_H, PIECE_SYMBOL, WHITE, BLACK, PIECE_KING
 except Exception:
     # Fallback seguro (não deve acontecer no seu projeto)
     BOARD_W, BOARD_H, WHITE = 8, 8, 0
@@ -148,6 +149,18 @@ class GameScene(Scene):
         # seleção de casa no tabuleiro
         self.sel = None
 
+        # estado de fim de jogo
+        self.game_over = False
+        self.game_over_at = None
+        self.winner_side = None
+        self.winner_name = None
+
+        # limpa flags no contexto compartilhado (realtime)
+        self.game_ctx["gameOver"] = False
+        self.game_ctx["winnerSide"] = None
+        self.game_ctx["winnerName"] = None
+        self.game_ctx["outcome"] = None
+
 
     def _pick_random_question(self):
         return random.choice(QUIZ_DATA)
@@ -205,6 +218,11 @@ class GameScene(Scene):
             self.game_ctx["quiz"] = None
             self._sync_board_state()
             self._update_turn_ctx(log_to_console=True)
+
+            if self._check_king_absent_and_gameover():
+                return True
+            self._check_game_over()
+
             return True
 
         return False
@@ -292,6 +310,11 @@ class GameScene(Scene):
 
         nome = "Brancas" if next_side == "white" else "Pretas"
         self.console.push(f"Quiz continua! Agora é a vez das {nome}.")
+        
+        core = getattr(self.api, "board", None) or self.api
+        wk = self._king_square_from_any(core, WHITE)
+        bk = self._king_square_from_any(core, BLACK)
+        print("DEBUG kings wk,bk:", wk, bk)
 
 
     def _sync_board_state(self):
@@ -335,10 +358,9 @@ class GameScene(Scene):
 
             # 3) calcula check no core
             in_check = core.is_check(color_int)
-            ksq = core.king_square(color_int)
+            ksq = self._king_square_from_any(core, color_int)
 
             king_x = king_y = None
-
             if isinstance(ksq, int):
                 board_state = self.game_ctx.get("board")
                 if isinstance(board_state, BoardState):
@@ -362,6 +384,120 @@ class GameScene(Scene):
             print("Erro em _update_check_status:", e)
             self.game_ctx["inCheckSide"] = None
             self.game_ctx["inCheckKing"] = None
+
+    def _king_square_from_any(self, core_or_board, color: int):
+        """
+        Retorna o índice linear da casa do rei (0..n-1) para a cor dada,
+        independente se 'core_or_board' é um objeto com .king_square()
+        ou uma lista linear de casas.
+        """
+        try:
+            # Caso 1: objeto com método king_square
+            if hasattr(core_or_board, "king_square"):
+                return core_or_board.king_square(color)
+
+            # Caso 2: lista linear ou objeto com atributo .board (lista)
+            board_list = core_or_board
+            if not isinstance(board_list, list):
+                board_list = getattr(core_or_board, "board", None)
+
+            if not isinstance(board_list, list):
+                return None
+
+            # Espera células como tuplas/listas (color, piece, ...)
+            for idx, cell in enumerate(board_list):
+                if not cell:
+                    continue
+                if isinstance(cell, (tuple, list)) and len(cell) >= 2:
+                    c, piece = cell[0], cell[1]
+                    if c == color and piece == PIECE_KING:
+                        return idx
+            return None
+        except Exception as e:
+            print("DEBUG _king_square_from_any error:", e)
+            return None
+
+    def _check_king_absent_and_gameover(self) -> bool:
+        """
+        Se um dos reis não existe no tabuleiro, dispara Game Over imediatamente.
+        Retorna True se finalizou o jogo, False caso contrário.
+        """
+        try:
+            core = getattr(self.api, "board", None) or self.api
+
+            wk = self._king_square_from_any(core, WHITE)
+            bk = self._king_square_from_any(core, BLACK)
+
+            # evita falso positivo durante boot (ambos None)
+            if wk is None and bk is None:
+                return False
+
+            if wk is None and bk is not None:
+                winner_side = "black"
+                winner_name = self.players.get("blackName", "Pretas")
+            elif bk is None and wk is not None:
+                winner_side = "white"
+                winner_name = self.players.get("whiteName", "Brancas")
+            else:
+                return False  # ambos vivos
+
+            self._start_game_over(winner_side, winner_name)
+            return True
+
+        except Exception as e:
+            print("Erro em _check_king_absent_and_gameover:", e)
+            return False
+        
+    def _start_game_over(self, winner_side: str | None, winner_name: str | None):
+        self.game_over = True
+        self.game_over_at = time.time()
+        self.winner_side = winner_side
+        self.winner_name = winner_name or "Empate"
+
+        # expõe pro realtime/web
+        self.game_ctx["gameOver"] = True
+        self.game_ctx["winnerSide"] = winner_side
+        self.game_ctx["winnerName"] = self.winner_name
+
+        try:
+            if getattr(self, "conn_mgr", None) and getattr(self, "fastapi_app", None):
+                from realtime.router import _build_state_payload  # evita import circular no topo
+                payload = _build_state_payload(self.conn_mgr, self.game_ctx)
+                import asyncio
+                asyncio.run(self.conn_mgr.broadcast(payload))
+        except Exception as e:
+            print("WARN broadcast gameOver:", e)
+
+    def _check_game_over(self):
+        try:
+            core = getattr(self.api, "board", None) or self.api
+            if not hasattr(core, "outcome"):
+                return
+
+            res = core.outcome()
+            if not res:
+                return
+
+            # guarda outcome bruto (se quiser usar no front)
+            self.game_ctx["outcome"] = res
+
+            winner_side = None
+            if res.startswith("checkmate_white_wins"):
+                winner_side = "white"
+            elif res.startswith("checkmate_black_wins"):
+                winner_side = "black"
+
+            if winner_side:
+                name_key = "whiteName" if winner_side == "white" else "blackName"
+                winner_name = self.players.get(name_key, "Jogador vencedor")
+                self._start_game_over(winner_side, winner_name)
+            else:
+                # empate / stalemate
+                self._start_game_over(None, "Empate")
+
+        except Exception as e:
+            print("Erro em _check_game_over:", e)
+
     
     async def _on_move_async(self, src_xy, dst_xy):
         ok = self.api.try_move(src_xy, dst_xy)
@@ -369,14 +505,20 @@ class GameScene(Scene):
             self.console.push("Movimento rejeitado")
             return False, False
 
-        # quiz
-        if getattr(self.api, "was_capture", False):
-            self._start_quiz()
+        # descobre se o último movimento foi captura
+        was_capture = getattr(self.api, "was_capture", False)
+
         
         # atualiza estado local
         self._sync_board_state()
         self._update_check_status()
         self._update_turn_ctx(log_to_console=True)
+            
+        # quiz
+        if was_capture:
+            self._start_quiz()
+        else:
+            self._check_game_over()
 
         return ok, getattr(self.api, "was_capture", False)
 
@@ -430,6 +572,11 @@ class GameScene(Scene):
             self.game_ctx["quiz"] = None
             self._sync_board_state()
             self._update_turn_ctx(log_to_console=True)
+
+            if self._check_king_absent_and_gameover():
+                return True
+            self._check_game_over()
+
             return True  # duelo acabou
 
         # 2) Calcula penalidade em cima do tempo que ele ficou pensando
@@ -453,6 +600,11 @@ class GameScene(Scene):
             self.game_ctx["quiz"] = None
             self._sync_board_state()
             self._update_turn_ctx(log_to_console=True)
+
+            if self._check_king_absent_and_gameover():
+                return True
+            self._check_game_over()
+
             return True  # duelo acabou
 
         # A partir daqui o jogador ainda tem tempo suficiente -> checa se errou/acertou
@@ -485,6 +637,11 @@ class GameScene(Scene):
         self.game_ctx["quiz"] = None
         self._sync_board_state()
         self._update_turn_ctx(log_to_console=True)
+
+        if self._check_king_absent_and_gameover():
+            return True
+        self._check_game_over()
+
         return True  # duelo acabou
 
 
@@ -591,6 +748,11 @@ class GameScene(Scene):
     # -------------- Eventos --------------
 
     def handle_event(self, ev):
+        if getattr(self, "game_over", False):
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                return SceneResult(next_scene="menu")
+            return None
+
         if ev.type == pygame.VIDEORESIZE:
             self.win_w, self.win_h = ev.w, ev.h
             self._compute_layout(ev.w, ev.h)
@@ -653,6 +815,11 @@ class GameScene(Scene):
     def update(self, dt):
         self.matrix.update(dt)
 
+        # se acabou o jogo, conta 10s e volta pro menu
+        if getattr(self, "game_over", False) and self.game_over_at is not None:
+            if time.time() - self.game_over_at >= 10.0:
+                return SceneResult(next_scene="menu")
+
 
     def _update_turn_ctx(self, log_to_console: bool = False):
         """
@@ -693,6 +860,9 @@ class GameScene(Scene):
 
         self._draw_mock_window(screen, self.right_console_rect, "Status da Partida")
         self.console.draw(screen)
+
+        if getattr(self, "game_over", False):
+            self._draw_game_over_overlay(screen)
 
     # ---------- Desenho: esquerda (tabuleiro funcional) ----------
 
@@ -781,6 +951,73 @@ class GameScene(Scene):
                 x, y = fr(idx)
                 # agora retornamos a peça inteira em vez de glyph
                 yield (x, y, piece)
+
+
+    def _draw_game_over_overlay(self, screen: pygame.Surface):
+        w, h = screen.get_size()
+
+        # fundo escurecido
+        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 190))
+        screen.blit(overlay, (0, 0))
+
+        title_font = font_consolas(36)
+        name_font = font_consolas(32)
+        small_font = font_consolas(18)
+
+        if self.winner_side is None:
+            title_text = "Fim de jogo"
+            name_text = self.winner_name or "Empate"
+        else:
+            title_text = "Xeque-mate!"
+            name_text = self.winner_name or "Jogador vencedor"
+
+        title_surf = title_font.render(title_text, True, NEON)
+        title_rect = title_surf.get_rect(center=(w // 2, h // 2 - 60))
+        screen.blit(title_surf, title_rect)
+
+        name_surf = name_font.render(name_text, True, (240, 250, 255))
+        name_rect = name_surf.get_rect(center=(w // 2, h // 2))
+        screen.blit(name_surf, name_rect)
+
+        if self.winner_side is not None:  # Apenas exibe se houver um vencedor claro
+            winner_info_text = "é o vencedor!!"
+            winner_info_surf = small_font.render(winner_info_text, True, (220, 230, 240))
+            # Centraliza o texto e posiciona 20 pixels abaixo do nome
+            winner_info_rect = winner_info_surf.get_rect(center=(w // 2, h // 2 + 20))
+            screen.blit(winner_info_surf, winner_info_rect)
+
+        # contador regressivo
+        if self.game_over_at:
+            remaining = max(0, int(10 - (time.time() - self.game_over_at)))
+            info_text = f"Voltando ao menu em {remaining}s..."
+            info_surf = small_font.render(info_text, True, (220, 230, 240))
+            info_rect = info_surf.get_rect(center=(w // 2, h // 2 + 40))
+            screen.blit(info_surf, info_rect)
+
+        # fogos simples ao lado do nome
+        self._draw_fireworks(screen, name_rect)
+
+    def _draw_fireworks(self, screen: pygame.Surface, name_rect: pygame.Rect):
+        """
+        Desenha fogos bem simples à esquerda e à direita do nome do vencedor.
+        """
+        cx_left = name_rect.left - 40
+        cx_right = name_rect.right + 40
+        cy = name_rect.centery
+
+        t = time.time()
+
+        for base_x in (cx_left, cx_right):
+            for i in range(8):
+                ang = (t * 2.0) + (i * (math.pi / 4.0))
+                r = 24 + 6 * math.sin(t * 3 + i)
+
+                x2 = base_x + math.cos(ang) * r
+                y2 = cy + math.sin(ang) * r
+
+                pygame.draw.line(screen, NEON, (base_x, cy), (x2, y2), 1)
+                pygame.draw.circle(screen, NEON, (int(x2), int(y2)), 2)
 
 
     # ---------- Desenho: direita (mock janelas + 3D) ----------

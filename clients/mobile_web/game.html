@@ -37,6 +37,21 @@
     <div id="console" class="console" role="log" aria-live="polite"></div>
   </div>
 
+  <div id="gameOverModal" class="modal">
+    <div class="modal__backdrop"></div>
+    <div class="modal__card">
+      <div id="gameOverTitle" class="gameover-title">Xeque-mate!</div>
+      <div class="gameover-winner">
+        <span class="fireworks"></span>
+        <span id="winnerName" class="gameover-name">Jogador</span>
+        <span class="fireworks"></span>
+      </div>
+      <p class="gameover-text">
+        Voltando ao menu em <span id="backCountdown">10</span>s...
+      </p>
+    </div>
+  </div>
+
   <script type="module" src="grid.js"></script>
   <script type="module" src="chess.js"></script>
 </body>

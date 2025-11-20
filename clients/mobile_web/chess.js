@@ -44,7 +44,9 @@ let inCheckKing = null;
 let FLIP_Y = false;
 let lastBoardSig = null;   // assinatura do board do último snapshot desenhado
 let lastTurnKey  = null;   // 'white' | 'black'
-
+let gameOverShown   = false;
+let gameOverTimer   = null;
+let gameOverInterval = null
 
 const idx = (x, y) => y * COLS + x;
 const log = (t) => {
@@ -527,6 +529,92 @@ function drawBoard() {
   bctx.restore();
 }
 
+function showGameOverOverlay(msg) {
+  const modal       = document.getElementById('gameOverModal');
+  const nameEl      = document.getElementById('winnerName');
+  const titleEl     = document.getElementById('gameOverTitle');
+  const countdownEl = document.getElementById('backCountdown');
+
+  if (!modal) return;
+
+  modal.classList.add('is-open');
+
+  let winnerName = msg.winnerName || null;
+  const winnerSide = msg.winnerSide || null;
+
+  // tenta inferir pelo lado, se o nome não veio direto
+  if (!winnerName && winnerSide && Array.isArray(msg.players)) {
+    if (winnerSide === 'white') {
+      winnerName = msg.players[0]?.name || 'Brancas';
+    } else if (winnerSide === 'black') {
+      winnerName = msg.players[1]?.name || 'Pretas';
+    }
+  }
+
+  if (!winnerName && !winnerSide) {
+    winnerName = 'Empate';
+  }
+
+  if (nameEl && winnerName) {
+    nameEl.textContent = winnerName;
+  }
+
+  const outcome = msg.outcome || '';
+  if (titleEl) {
+    if (outcome && outcome.startsWith('stalemate')) {
+      titleEl.textContent = 'Empate!';
+    } else {
+      titleEl.textContent = 'Xeque-mate!';
+    }
+  }
+
+  // só dispara timers uma vez
+  if (!gameOverShown) {
+    gameOverShown = true;
+
+    let remaining = 10;
+    if (countdownEl) countdownEl.textContent = remaining.toString();
+
+    if (gameOverInterval) clearInterval(gameOverInterval);
+    gameOverInterval = setInterval(() => {
+      remaining--;
+      if (remaining < 0) remaining = 0;
+      if (countdownEl) countdownEl.textContent = remaining.toString();
+      if (remaining <= 0 && gameOverInterval) {
+        clearInterval(gameOverInterval);
+        gameOverInterval = null;
+      }
+    }, 1000);
+
+    if (gameOverTimer) clearTimeout(gameOverTimer);
+    gameOverTimer = setTimeout(() => {
+      const basePath = window.location.pathname.replace(/[^/]+$/, '');
+      window.location.href = basePath + 'index.html';
+    }, 10000);
+  }
+}
+
+function hideGameOverOverlay() {
+  const modal       = document.getElementById('gameOverModal');
+  const countdownEl = document.getElementById('backCountdown');
+
+  if (!modal) return;
+
+  modal.classList.remove('is-open');
+
+  if (countdownEl) countdownEl.textContent = '';
+
+  if (gameOverInterval) {
+    clearInterval(gameOverInterval);
+    gameOverInterval = null;
+  }
+  if (gameOverTimer) {
+    clearTimeout(gameOverTimer);
+    gameOverTimer = null;
+  }
+  gameOverShown = false;
+}
+
 /* ========== Input ========== */
 
 let sel = null;           // casa selecionada [x,y] ou null
@@ -730,6 +818,13 @@ function applyStateSnapshot(msg) {
     "| quiz =", msg.quiz ? "presente" : "null"
   );
 
+  // game-over
+  if (msg.gameOver) {
+      showGameOverOverlay(msg);
+    } else {
+      hideGameOverOverlay();
+  }
+
   if (msg.phase) {
     gamePhase = msg.phase;
 
@@ -786,28 +881,28 @@ function applyStateSnapshot(msg) {
   const hasQuiz = !!msg.quiz;
 
   if (phase === "quiz" || hasQuiz) {
-  // Monta query string preservando o que já existe (ws, name, etc.)
-  const params = new URLSearchParams(window.location.search);
+    // Monta query string preservando o que já existe (ws, name, etc.)
+    const params = new URLSearchParams(window.location.search);
+  
+    // Se ainda não tiver "color" na URL, colocamos com base em myColor do xadrez
+    if (!params.get("color") && myColor) {
+      // myColor aqui é 'w' ou 'b' (do chess.js)
+      const colorStr = myColor === "w" ? "white" : "black";
+      params.set("color", colorStr);
+    }
 
-  // Se ainda não tiver "color" na URL, colocamos com base em myColor do xadrez
-  if (!params.get("color") && myColor) {
-    // myColor aqui é 'w' ou 'b' (do chess.js)
-    const colorStr = myColor === "w" ? "white" : "black";
-    params.set("color", colorStr);
+    if (!params.get("name") && playerName) {
+      params.set("name", playerName);
+    }
+
+    const search = params.toString() ? "?" + params.toString() : "";
+    const basePath = window.location.pathname.replace(/[^/]+$/, "");
+    const target = basePath + "quiz.html" + search;
+
+    console.log("[WEB] Entrou em phase=quiz, redirecionando para:", target);
+    window.location.href = target;
+    return;
   }
-
-  if (!params.get("name") && playerName) {
-    params.set("name", playerName);
-  }
-
-  const search = params.toString() ? "?" + params.toString() : "";
-  const basePath = window.location.pathname.replace(/[^/]+$/, "");
-  const target = basePath + "quiz.html" + search;
-
-  console.log("[WEB] Entrou em phase=quiz, redirecionando para:", target);
-  window.location.href = target;
-  return;
-}
 
   if (Array.isArray(msg.players)) {
     updatePlayersState(msg.players);
