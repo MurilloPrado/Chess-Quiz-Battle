@@ -1,5 +1,6 @@
 # backend/app/gui/scenes/lobby.py
 import math
+import random
 from pathlib import Path
 
 import pygame
@@ -51,6 +52,36 @@ def draw_fake_window(screen: pygame.Surface, rect: pygame.Rect, title: str, neon
     screen.blit(label, (bar.x + 10, bar.y + (bar.h - label.get_height())//2))
     # inner content rect
     return pygame.Rect(rect.x+2, bar.bottom, rect.w-4, rect.h - (bar.bottom-rect.y) - 2)
+
+def _load_icon_surfaces(folder: Path) -> list[pygame.Surface]:
+    """Carrega todas as imagens do diretório como Surfaces."""
+    try:
+        if not folder.is_dir():
+            return []
+    except Exception:
+        return []
+    exts = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
+    surfs: list[pygame.Surface] = []
+    for p in folder.iterdir():
+        if p.is_file() and p.suffix.lower() in exts:
+            try:
+                img = pygame.image.load(str(p))
+                surf = img.convert_alpha() if img.get_alpha() else img.convert()
+                surfs.append(surf)
+            except Exception:
+                pass
+    return surfs
+
+def _fit_into(surf: pygame.Surface, target_rect: pygame.Rect, pad: int = 12) -> pygame.Surface:
+    """Redimensiona mantendo proporção para caber dentro do retângulo alvo."""
+    tw = max(1, target_rect.w - pad*2)
+    th = max(1, target_rect.h - pad*2)
+    w, h = surf.get_size()
+    if w == 0 or h == 0:
+        return surf
+    scale = min(tw / w, th / h)
+    new_size = (max(1, int(w*scale)), max(1, int(h*scale)))
+    return pygame.transform.smoothscale(surf, new_size)
 
 # ---------- Efeito CRT + Grid ----------
 def ensure_crt_overlay(cache, w, h):
@@ -148,6 +179,9 @@ class LobbyScene(Scene):
         project_root = find_root(here)
         static_dir = project_root / "clients" / "mobile_web"
         assets_dir = project_root / "assets"
+        # Ícones dos jogadores (cache por id)
+        self._all_icons = _load_icon_surfaces(assets_dir / "icons")
+        self._icon_by_player: dict[str, pygame.Surface] = {}
         if not static_dir.is_dir():
             raise RuntimeError(f"Pasta estática não encontrada: {static_dir}")
 
@@ -262,7 +296,15 @@ class LobbyScene(Scene):
         if hasattr(self.conn_mgr, "players"):
             return self.conn_mgr.players()
         return [{"id": cid, **meta} for cid,meta in getattr(self.conn_mgr,"_meta",{}).items()]
-    
+
+
+    def _pick_icon_for_player(self, player: dict) -> pygame.Surface | None:
+        if not getattr(self, "_all_icons", None):
+            return None
+        pid = str(player.get("id", player.get("name", "")))
+        if pid not in self._icon_by_player:
+            self._icon_by_player[pid] = random.choice(self._all_icons)
+        return self._icon_by_player[pid]
 
     def _draw_countdown_timer(self, screen: pygame.Surface):
         """Círculo igual ao do layout: fundo preto, borda branca e número.
@@ -331,12 +373,19 @@ class LobbyScene(Scene):
             # esquerda (primeiro jogador)
             left_rect  = pygame.Rect(qr_rect.left - pad - p_w, qr_rect.centery - p_h//2, p_w, p_h)
             left_inner = draw_fake_window(screen, left_rect, players[0].get("name", "Jogador 1"))
-            # (opcional: desenhar avatar/ícone aqui, se você quiser)
+            icon0 = self._pick_icon_for_player(players[0])
+            if icon0:
+                icon0_fit = _fit_into(icon0, left_inner, pad=18)
+                screen.blit(icon0_fit, icon0_fit.get_rect(center=left_inner.center))
 
             # direita (segundo jogador, se houver)
             if len(players) >= 2:
                 right_rect  = pygame.Rect(qr_rect.right + pad, qr_rect.centery - p_h//2, p_w, p_h)
                 right_inner = draw_fake_window(screen, right_rect, players[1].get("name", "Jogador 2"))
+                icon1 = self._pick_icon_for_player(players[1])
+                if icon1:
+                    icon1_fit = _fit_into(icon1, right_inner, pad=18)
+                    screen.blit(icon1_fit, icon1_fit.get_rect(center=right_inner.center))
 
 
         # Rodapé pequeno com URL
