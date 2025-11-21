@@ -78,5 +78,256 @@
       "Uma função que se chama a si mesma para resolver subproblemas, até atingir um caso base."
     ],
     "correta": 3
+  },
+  {
+    "pergunta": "Um autômato finito é:",
+    "alternativas": [
+      "Um diagrama usado para calcular expressões matemáticas complexas.",
+      "Um algoritmo utilizado para ordenar listas de números.",
+      "Uma estrutura de dados usada para armazenar símbolos temporariamente.",
+      "Um modelo matemático usado para reconhecer padrões em cadeias de símbolos."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "AFD – Autômato Finito Determinístico: na transição ele permite…",
+    "alternativas": [
+      "Várias transições possíveis para o mesmo símbolo de entrada.",
+      "Transições que mudam de estado sem consumir símbolo algum.",
+      "Transições probabilísticas que dependem de sorteio ou chance.",
+      "Apenas uma transição possível para cada símbolo e estado."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "Linguagens regulares são aplicadas em contextos que:",
+    "alternativas": [
+      "Requerem cálculos matemáticos avançados e recursivos.",
+      "Precisam manipular estruturas de dados extremamente complexas.",
+      "Envolvem memória ilimitada e hierarquias profundas.",
+      "Necessitam reconhecer padrões simples, como validação de um CEP."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "Um AFN pode ter transições que:",
+    "alternativas": [
+      "Necessariamente levam a apenas um único estado.",
+      "Sempre precisam consumir um símbolo da entrada.",
+      "Nunca levam a subconjuntos de estados.",
+      "Podem levar a mais de um estado possível para o mesmo símbolo."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "Sobre o comportamento do AFN, podemos afirmar que:",
+    "alternativas": [
+      "Ao receber a mesma entrada, o comportamento é sempre igual.",
+      "Ao receber a mesma entrada, pode ter comportamentos diferentes.",
+      "Não existe caminho alternativo de processamento.",
+      "Um AFN sempre devolve erro em ambiguidades."
+    ],
+    "correta": 1
+  },
+  {
+    "pergunta": "Um critério para aceitação de uma palavra em um AFN é:",
+    "alternativas": [
+      "Necessariamente visitar todos os estados.",
+      "Finalizar em qualquer estado não-determinístico.",
+      "Ler todos os símbolos e retornar ao estado inicial.",
+      "Finalizar em um estado pertencente ao conjunto de estados finais."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "Uma gramática do Tipo 3 (Regular) possui produções do tipo:",
+    "alternativas": [
+      "A → BC",
+      "A → BCD",
+      "A → αBβ",
+      "A → aB | a | ε"
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "O tipo de autômato associado às gramáticas regulares (Tipo 3) é:",
+    "alternativas": [
+      "Máquina de Turing",
+      "PDA (Pilha)",
+      "LBA (Linear Bounded Automaton)",
+      "AFD ou AFN"
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "Gramáticas Tipo 2 (Livres de Contexto) são reconhecidas por:",
+    "alternativas": [
+      "AFD",
+      "AFN",
+      "PDA (autômato com pilha)",
+      "Máquina de Turing"
+    ],
+    "correta": 2
+  },
+  {
+    "pergunta": "Um exemplo típico de gramática livre de contexto é:",
+    "alternativas": [
+      "Verificar se o número de 0s é igual ao número de 1s.",
+      "Reconhecer CEPs.",
+      "Checar parênteses balanceados.",
+      "Verificar se termina em zero."
+    ],
+    "correta": 2
+  },
+  {
+    "pergunta": "Gramáticas Tipo 0 (Irrestritas) são reconhecidas por:",
+    "alternativas": [
+      "AFD",
+      "PDA",
+      "LBA",
+      "Máquina de Turing"
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "No AFN, uma palavra é rejeitada se:",
+    "alternativas": [
+      "Não passar pelo estado inicial.",
+      "Contiver símbolos repetidos.",
+      "Possuir tamanho ímpar.",
+      "Após processar todo o input, não atingir estado final."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "A gramática livre de contexto (Tipo 2) pode gerar linguagens que:",
+    "alternativas": [
+      "Não podem ser reconhecidas por PDAs.",
+      "Nunca têm símbolos recursivos.",
+      "Sempre exigem pilha infinita.",
+      "Possuem estruturas aninhadas, como parênteses balanceados."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "Sobre o autômato que reconhece palavras com aa ou bb como subpalavra:",
+    "alternativas": [
+      "Precisa obrigatoriamente ser determinístico.",
+      "Não aceita palavras com símbolos mistos.",
+      "Somente aceita palavras com sufixo fixo.",
+      "Pode ser construído como AFD ou AFN."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "No modelo AFD, se não existir transição definida para um símbolo:",
+    "alternativas": [
+      "O autômato cria um novo estado automaticamente.",
+      "O símbolo é ignorado.",
+      "O autômato retorna para o estado inicial.",
+      "A palavra é rejeitada."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "A linguagem reconhecida por uma Máquina de Turing (Tipo 0) inclui:",
+    "alternativas": [
+      "Apenas linguagens regulares.",
+      "Apenas linguagens livres de contexto.",
+      "Apenas linguagens sensíveis ao contexto.",
+      "Qualquer linguagem recursivamente enumerável."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "As linguagens regulares são reconhecidas por qual tipo de autômato?",
+    "alternativas": [
+      "Máquina de Turing",
+      "PDA",
+      "LBA",
+      "AFD ou AFN"
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "As linguagens regulares são boas para:",
+    "alternativas": [
+      "Validar expressões com parênteses aninhados.",
+      "Resolver problemas de recursão profunda.",
+      "Traduzir linguagens de programação.",
+      "Validar formatos simples, como CEP ou placas."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "Uma característica das gramáticas regulares é:",
+    "alternativas": [
+      "Podem ter vários não-terminais no lado direito.",
+      "Necessitam de pilha para funcionar.",
+      "Sempre precisam de Máquina de Turing.",
+      "Têm no máximo um não-terminal no fim da produção."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "Linguagens livres de contexto são reconhecidas por:",
+    "alternativas": [
+      "AFD",
+      "AFN",
+      "PDA",
+      "Máquina de Turing"
+    ],
+    "correta": 2
+  },
+  {
+    "pergunta": "As gramáticas livres de contexto conseguem representar:",
+    "alternativas": [
+      "Qualquer programa de computador.",
+      "Qualquer expressão regular.",
+      "Cadeias com requisitos ilimitados.",
+      "Estruturas aninhadas, como árvores e blocos."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "Linguagens sensíveis ao contexto exigem:",
+    "alternativas": [
+      "Que cada produção tenha tamanho igual.",
+      "Que o lado direito seja menor que o esquerdo.",
+      "Nenhuma condição especial.",
+      "Que o símbolo substituído dependa do contexto ao redor."
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "Essas linguagens são reconhecidas por qual modelo?",
+    "alternativas": [
+      "AFD",
+      "PDA",
+      "LBA",
+      "Autômato sem transições"
+    ],
+    "correta": 2
+  },
+  {
+    "pergunta": "Linguagens do Tipo 0 são reconhecidas por:",
+    "alternativas": [
+      "AFD",
+      "PDA",
+      "LBA",
+      "Máquina de Turing"
+    ],
+    "correta": 3
+  },
+  {
+    "pergunta": "Linguagens Tipo 0 permitem produções:",
+    "alternativas": [
+      "Que seguem uma forma fixa.",
+      "Que eliminam símbolos.",
+      "Que só usam um não-terminal.",
+      "De qualquer forma, sem restrições."
+    ],
+    "correta": 3
   }
 ]
+

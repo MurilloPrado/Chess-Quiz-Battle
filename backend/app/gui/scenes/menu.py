@@ -192,8 +192,7 @@ class MenuScene(Scene):
                 if self.items[self.sel] == "Jogar":
                     return SceneResult(next_scene="lobby")
                 elif self.items[self.sel] == "Ranking":
-                    # placeholder (se ainda não existir cena de ranking)
-                    return None
+                    return SceneResult(next_scene="ranking")
                 elif self.items[self.sel] == "Regras":
                     return SceneResult(next_scene="rules")
                 elif self.items[self.sel] == "Sair":
