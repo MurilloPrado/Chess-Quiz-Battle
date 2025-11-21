@@ -87,19 +87,23 @@ As principais libs Python estão definidas em `requirements.txt`: :contentRefere
 ```bash
 git clone https://github.com/MurilloPrado/Chess-Quiz-Battle.git
 cd Chess-Quiz-Battle
+```
 
 ## 2. Ativar o ambiente virtual
 
 ```bash
 python -m venv venv
 venv\Scripts\activate
+```
 
 ## 3. Instalar as dependências
 
 ```bash
 pip install -r requirements.txt
+```
 
 ## 4. Iniciar o jogo
 
 ```bash
 python backend/app.py
+```
