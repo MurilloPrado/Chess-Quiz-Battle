@@ -16,6 +16,14 @@ from realtime.models import BoardState, StateMsg, MoveMsg
 from chess.core.rules import is_check, king_square
 from chess.utils.coordinates import fr
 
+# CHANGED: integração com o banco de ranking
+try:
+    from persistence.database import init_db, registrar_vitoria
+except Exception as e:
+    print("WARN: não foi possível importar módulo de ranking:", e)
+    init_db = None
+    registrar_vitoria = None
+
 # Se seu core expõe BOARD_W/BOARD_H via utils.constants, usamos nos cálculos.
 try:
     from chess.utils.constants import BOARD_W, BOARD_H, PIECE_SYMBOL, WHITE, BLACK, PIECE_KING
@@ -32,6 +40,23 @@ QUIZ_PENALTY_RATIO = 0.6        # 5s pensando → ~3s de penalidade (5 * 0.6)
 QUIZ_MIN_PENALTY = 1.0          # nunca perde menos que 1s
 QUIZ_MAX_PENALTY = 10.0         # só pra não exagerar se ficar muito tempo
 
+# CHANGED: flag para inicializar o DB apenas uma vez
+_DB_INIT_DONE = False
+
+def ensure_db_init():
+    """Inicializa o banco de ranking apenas uma vez por processo."""
+    global _DB_INIT_DONE
+    if _DB_INIT_DONE:
+        return
+    if init_db is None:
+        return
+    try:
+        init_db()
+        _DB_INIT_DONE = True
+    except Exception as e:
+        print("Erro ao inicializar banco de ranking:", e)
+
+
 def _compute_time_penalty(elapsed: float) -> float:
     """
     Converte o tempo que o jogador ficou pensando (elapsed)
@@ -42,7 +67,7 @@ def _compute_time_penalty(elapsed: float) -> float:
     raw = elapsed * QUIZ_PENALTY_RATIO
     penalty = round(raw)
     penalty = max(QUIZ_MIN_PENALTY, penalty)
-    penalty = min(QUIZ_MAX_PENALTY, penalty)
+    penalty = min(QUIZ_MAX_PENALTY, QUIZ_MAX_PENALTY)
     return penalty
 
 def _load_quiz_data():
@@ -81,6 +106,9 @@ class GameScene(Scene):
     # -------------- Ciclo de vida --------------
 
     def enter(self, ctx):
+        # CHANGED: garante que o banco de ranking existe
+        ensure_db_init()
+
         self.ctx = ctx
         self.screen: pygame.Surface = ctx["screen"]
         self.font = font_consolas(18)
@@ -440,6 +468,13 @@ class GameScene(Scene):
         self.game_over_at = time.time()
         self.winner_side = winner_side
         self.winner_name = winner_name or "Empate"
+
+        # CHANGED: registra vitória no banco se houver vencedor claro
+        if self.winner_side is not None and registrar_vitoria is not None:
+            try:
+                registrar_vitoria(self.winner_name)
+            except Exception as e:
+                print(f"Erro ao registrar vitória para {self.winner_name}: {e}")
 
         # expõe pro realtime/web
         self.game_ctx["gameOver"] = True
